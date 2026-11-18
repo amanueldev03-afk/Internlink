@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "internlink-ai-service"
+version = "0.1.0"
+description = "AI and recommendation service for InternLink"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.32,<1",
+  "pydantic>=2.9,<3",
+  "numpy>=2.2,<3",
+  "pandas>=2.2,<4",
+  "scikit-learn>=1.5,<2",
+  "torch>=2.5,<3",
+  "transformers>=4.46,<6",
+  "sentence-transformers>=3.3,<7",
+  "PyMuPDF>=1.24,<3",
+  "pytest>=8.3,<10",
+  "python-dotenv>=1,<2",
+  "httpx>=0.27,<1"
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.7.4", "mypy>=1.13.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["models*", "scripts*"]

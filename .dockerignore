@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+.git
+.env
+.env.*
+!.env.example
+**/dist
+**/build
+coverage
+.pytest_cache
+.mypy_cache

@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+apps/*/vite.config.js
+apps/*/vite.config.d.ts
+**/dist/**
+**/node_modules/**
+**/.venv/**
