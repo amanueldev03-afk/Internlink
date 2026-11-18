@@ -135,7 +135,7 @@ ALTER COLUMN "slug" SET DATA TYPE VARCHAR(120);
 
 -- Preserve the old string type and map it to the constrained organization enum.
 ALTER TABLE "Organization" RENAME COLUMN "type" TO "legacyType";
-ALTER TABLE "Organization" ALTER COLUMN "legacyType" TYPE VARCHAR(120),
+ALTER TABLE "Organization" ALTER COLUMN "legacyType" TYPE TEXT,
 ALTER COLUMN "legacyType" DROP NOT NULL;
 ALTER TABLE "Organization" ADD COLUMN "type" "OrganizationType" NOT NULL DEFAULT 'OTHER';
 UPDATE "Organization" SET "type" = CASE upper("legacyType")
@@ -407,6 +407,7 @@ CREATE TABLE "StudentSkill" (
 CREATE TABLE "Application" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
+    "programId" TEXT NOT NULL,
     "studentProfileId" TEXT NOT NULL,
     "positionId" TEXT NOT NULL,
     "submittedById" TEXT,
@@ -779,6 +780,7 @@ CREATE TABLE "EvaluationCriterion" (
 CREATE TABLE "EvaluationResult" (
     "id" TEXT NOT NULL,
     "reviewId" TEXT NOT NULL,
+    "submissionId" TEXT NOT NULL,
     "placementId" TEXT NOT NULL,
     "studentProfileId" TEXT NOT NULL,
     "criterionId" TEXT,
@@ -1270,7 +1272,13 @@ CREATE UNIQUE INDEX "OrganizationSetting_organizationId_key_key" ON "Organizatio
 CREATE INDEX "InternshipProgram_organizationId_status_applicationDeadline_idx" ON "InternshipProgram"("organizationId", "status", "applicationDeadline");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "InternshipProgram_id_organizationId_key" ON "InternshipProgram"("id", "organizationId");
+
+-- CreateIndex
 CREATE INDEX "InternshipPosition_programId_status_idx" ON "InternshipPosition"("programId", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "InternshipPosition_id_programId_key" ON "InternshipPosition"("id", "programId");
 
 -- CreateIndex
 CREATE INDEX "InternshipSkill_skillId_idx" ON "InternshipSkill"("skillId");
@@ -1300,7 +1308,7 @@ CREATE INDEX "Application_positionId_status_idx" ON "Application"("positionId", 
 CREATE UNIQUE INDEX "Application_studentProfileId_positionId_key" ON "Application"("studentProfileId", "positionId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Application_id_positionId_studentProfileId_key" ON "Application"("id", "positionId", "studentProfileId");
+CREATE UNIQUE INDEX "Application_id_positionId_studentProfileId_organizationId_key" ON "Application"("id", "positionId", "studentProfileId", "organizationId");
 
 -- CreateIndex
 CREATE INDEX "ApplicationDocument_documentId_idx" ON "ApplicationDocument"("documentId");
@@ -1353,6 +1361,13 @@ CREATE UNIQUE INDEX "Placement_applicationId_key" ON "Placement"("applicationId"
 -- CreateIndex
 CREATE UNIQUE INDEX "Placement_applicationId_positionId_studentProfileId_key"
 ON "Placement"("applicationId", "positionId", "studentProfileId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Placement_applicationId_positionId_studentProfileId_organizationId_key"
+ON "Placement"("applicationId", "positionId", "studentProfileId", "organizationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Placement_id_studentProfileId_key" ON "Placement"("id", "studentProfileId");
 
 -- CreateIndex
 CREATE INDEX "Placement_organizationId_status_startsAt_idx" ON "Placement"("organizationId", "status", "startsAt");
@@ -1433,6 +1448,9 @@ CREATE INDEX "Submission_organizationId_status_submittedAt_idx" ON "Submission"(
 CREATE INDEX "Submission_placementId_status_idx" ON "Submission"("placementId", "status");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Submission_id_placementId_key" ON "Submission"("id", "placementId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "SubmissionVersion_submissionId_version_key" ON "SubmissionVersion"("submissionId", "version");
 
 -- CreateIndex
@@ -1443,6 +1461,9 @@ CREATE INDEX "Review_submissionId_status_idx" ON "Review"("submissionId", "statu
 
 -- CreateIndex
 CREATE INDEX "Review_rubricId_idx" ON "Review"("rubricId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Review_id_submissionId_key" ON "Review"("id", "submissionId");
 
 -- CreateIndex
 CREATE INDEX "ReviewComment_reviewId_createdAt_idx" ON "ReviewComment"("reviewId", "createdAt");
@@ -1461,6 +1482,9 @@ CREATE UNIQUE INDEX "EvaluationCriterion_rubricId_sortOrder_key" ON "EvaluationC
 
 -- CreateIndex
 CREATE UNIQUE INDEX "EvaluationResult_reviewId_key" ON "EvaluationResult"("reviewId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EvaluationResult_reviewId_submissionId_key" ON "EvaluationResult"("reviewId", "submissionId");
 
 -- CreateIndex
 CREATE INDEX "EvaluationResult_placementId_publishedAt_idx" ON "EvaluationResult"("placementId", "publishedAt");
@@ -1527,6 +1551,9 @@ CREATE UNIQUE INDEX "PresentationResult_scheduleId_key" ON "PresentationResult"(
 
 -- CreateIndex
 CREATE UNIQUE INDEX "FinalResult_placementId_key" ON "FinalResult"("placementId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FinalResult_placementId_studentProfileId_key" ON "FinalResult"("placementId", "studentProfileId");
 
 -- CreateIndex
 CREATE INDEX "FinalResult_organizationId_publishedAt_idx" ON "FinalResult"("organizationId", "publishedAt");
@@ -1726,6 +1753,40 @@ CREATE UNIQUE INDEX "CompanyProfile_organizationId_key" ON "CompanyProfile"("org
 -- CreateIndex
 CREATE INDEX "CompanyVerification_status_createdAt_idx" ON "CompanyVerification"("status", "createdAt");
 
+-- Ambiguous legacy bearer tokens must not remain usable under an arbitrary
+-- user/session row after tokenHash uniqueness is enforced.
+WITH duplicate_hashes AS (
+  SELECT "tokenHash"
+  FROM "RefreshToken"
+  GROUP BY "tokenHash"
+  HAVING COUNT(*) > 1
+)
+UPDATE "RefreshToken" AS token
+SET "revokedAt" = COALESCE(token."revokedAt", CURRENT_TIMESTAMP)
+FROM duplicate_hashes
+WHERE token."tokenHash" = duplicate_hashes."tokenHash";
+
+DELETE FROM "RefreshToken" AS duplicate
+USING "RefreshToken" AS retained
+WHERE duplicate."tokenHash" = retained."tokenHash"
+  AND duplicate."id" > retained."id";
+
+WITH duplicate_hashes AS (
+  SELECT "tokenHash"
+  FROM "LoginSession"
+  GROUP BY "tokenHash"
+  HAVING COUNT(*) > 1
+)
+UPDATE "LoginSession" AS session
+SET "revokedAt" = COALESCE(session."revokedAt", CURRENT_TIMESTAMP)
+FROM duplicate_hashes
+WHERE session."tokenHash" = duplicate_hashes."tokenHash";
+
+DELETE FROM "LoginSession" AS duplicate
+USING "LoginSession" AS retained
+WHERE duplicate."tokenHash" = retained."tokenHash"
+  AND duplicate."id" > retained."id";
+
 -- CreateIndex
 CREATE UNIQUE INDEX "RefreshToken_tokenHash_key" ON "RefreshToken"("tokenHash");
 
@@ -1835,10 +1896,17 @@ ALTER TABLE "StudentSkill" ADD CONSTRAINT "StudentSkill_skillId_fkey" FOREIGN KE
 ALTER TABLE "Application" ADD CONSTRAINT "Application_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Application" ADD CONSTRAINT "Application_programId_organizationId_fkey"
+FOREIGN KEY ("programId", "organizationId") REFERENCES "InternshipProgram"("id", "organizationId")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Application" ADD CONSTRAINT "Application_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Application" ADD CONSTRAINT "Application_positionId_fkey" FOREIGN KEY ("positionId") REFERENCES "InternshipPosition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Application" ADD CONSTRAINT "Application_positionId_programId_fkey"
+FOREIGN KEY ("positionId", "programId") REFERENCES "InternshipPosition"("id", "programId")
+ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Application" ADD CONSTRAINT "Application_submittedById_fkey" FOREIGN KEY ("submittedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1899,8 +1967,8 @@ ALTER TABLE "Placement" ADD CONSTRAINT "Placement_organizationId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "Placement" ADD CONSTRAINT "Placement_applicationPositionStudent_fkey"
-FOREIGN KEY ("applicationId", "positionId", "studentProfileId")
-REFERENCES "Application"("id", "positionId", "studentProfileId")
+FOREIGN KEY ("applicationId", "positionId", "studentProfileId", "organizationId")
+REFERENCES "Application"("id", "positionId", "studentProfileId", "organizationId")
 ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2024,7 +2092,14 @@ ALTER TABLE "EvaluationRubric" ADD CONSTRAINT "EvaluationRubric_organizationId_f
 ALTER TABLE "EvaluationCriterion" ADD CONSTRAINT "EvaluationCriterion_rubricId_fkey" FOREIGN KEY ("rubricId") REFERENCES "EvaluationRubric"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_reviewId_fkey" FOREIGN KEY ("reviewId") REFERENCES "Review"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_reviewId_submissionId_fkey"
+FOREIGN KEY ("reviewId", "submissionId") REFERENCES "Review"("id", "submissionId")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_submissionId_placementId_fkey"
+FOREIGN KEY ("submissionId", "placementId") REFERENCES "Submission"("id", "placementId")
+ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_placementId_fkey" FOREIGN KEY ("placementId") REFERENCES "Placement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2096,7 +2171,9 @@ ALTER TABLE "PresentationResult" ADD CONSTRAINT "PresentationResult_scheduleId_f
 ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_placementId_fkey" FOREIGN KEY ("placementId") REFERENCES "Placement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_placementStudent_fkey"
+FOREIGN KEY ("placementId", "studentProfileId") REFERENCES "Placement"("id", "studentProfileId")
+ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

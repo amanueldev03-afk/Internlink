@@ -237,7 +237,7 @@ model User {
   firstName                   String                     @db.VarChar(100)
   lastName                    String                     @db.VarChar(100)
   status                      UserStatus                 @default(ACTIVE)
-  legacyStatus                String?                    @db.VarChar(100)
+  legacyStatus                String?                    @db.Text
   /// Legacy compatibility field retained during the initial schema expansion.
   isActive                    Boolean                    @default(true)
   emailVerifiedAt             DateTime?
@@ -344,7 +344,7 @@ model Organization {
   name                  String                     @db.VarChar(200)
   slug                  String                     @unique @db.VarChar(120)
   type                  OrganizationType
-  legacyType            String?                    @db.VarChar(120)
+  legacyType            String?                    @db.Text
   description           String?                    @db.Text
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
@@ -653,9 +653,11 @@ model InternshipProgram {
   organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   createdBy           User                 @relation("ProgramCreator", fields: [createdById], references: [id], onDelete: Restrict)
   positions           InternshipPosition[]
+  applications        Application[]
   invitations         Invitation[]
   eligibilityRules    EligibilityRule[]
 
+  @@unique([id, organizationId])
   @@index([organizationId, status, applicationDeadline])
 }
 
@@ -677,6 +679,7 @@ model InternshipPosition {
   placements       Placement[]
   recommendations  InternshipRecommendation[]
 
+  @@unique([id, programId])
   @@index([programId, status])
 }
 
@@ -725,6 +728,7 @@ model StudentSkill {
 model Application {
   id                String                     @id @default(cuid())
   organizationId    String
+  programId         String
   studentProfileId  String
   positionId        String
   submittedById     String?
@@ -735,7 +739,8 @@ model Application {
   updatedAt         DateTime                   @updatedAt
   organization      Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   studentProfile    StudentProfile             @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
-  position          InternshipPosition         @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  program           InternshipProgram          @relation(fields: [programId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  position          InternshipPosition         @relation(fields: [positionId, programId], references: [id, programId], onDelete: Restrict)
   submittedBy       User?                      @relation("ApplicationSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
   documents         ApplicationDocument[]
   history           ApplicationStatusHistory[]
@@ -745,7 +750,7 @@ model Application {
   placement         Placement?
 
   @@unique([studentProfileId, positionId])
-  @@unique([id, positionId, studentProfileId])
+  @@unique([id, positionId, studentProfileId, organizationId])
   @@index([organizationId, status, submittedAt])
   @@index([positionId, status])
 }
@@ -878,7 +883,7 @@ model Placement {
   createdAt             DateTime                  @default(now())
   updatedAt             DateTime                  @updatedAt
   organization          Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  application           Application               @relation(fields: [applicationId, positionId, studentProfileId], references: [id, positionId, studentProfileId], onDelete: Restrict, map: "Placement_applicationPositionStudent_fkey")
+  application           Application               @relation(fields: [applicationId, positionId, studentProfileId, organizationId], references: [id, positionId, studentProfileId, organizationId], onDelete: Restrict, map: "Placement_applicationPositionStudent_fkey")
   position              InternshipPosition        @relation(fields: [positionId], references: [id], onDelete: Restrict)
   studentProfile        StudentProfile            @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
   agreement             InternshipAgreement?
@@ -894,6 +899,8 @@ model Placement {
   @@index([organizationId, status, startsAt])
   @@index([studentProfileId, status])
   @@unique([applicationId, positionId, studentProfileId])
+  @@unique([id, studentProfileId])
+  @@unique([applicationId, positionId, studentProfileId, organizationId])
 }
 
 model InternshipAgreement {
@@ -1092,19 +1099,21 @@ model ImplementationMilestone {
 }
 
 model Submission {
-  id             String              @id @default(cuid())
-  organizationId String
-  placementId    String
-  title          String              @db.VarChar(200)
-  status         SubmissionStatus    @default(DRAFT)
-  submittedAt    DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  placement      Placement           @relation(fields: [placementId], references: [id], onDelete: Restrict)
-  versions       SubmissionVersion[]
-  reviews        Review[]
+  id                String              @id @default(cuid())
+  organizationId    String
+  placementId       String
+  title             String              @db.VarChar(200)
+  status            SubmissionStatus    @default(DRAFT)
+  submittedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  placement         Placement           @relation(fields: [placementId], references: [id], onDelete: Restrict)
+  versions          SubmissionVersion[]
+  reviews           Review[]
+  evaluationResults EvaluationResult[]
 
+  @@unique([id, placementId])
   @@index([organizationId, status, submittedAt])
   @@index([placementId, status])
 }
@@ -1138,6 +1147,7 @@ model Review {
   comments     ReviewComment[]
   result       EvaluationResult?
 
+  @@unique([id, submissionId])
   @@index([submissionId, status])
   @@index([rubricId])
 }
@@ -1188,6 +1198,7 @@ model EvaluationCriterion {
 model EvaluationResult {
   id               String               @id @default(cuid())
   reviewId         String               @unique
+  submissionId     String
   placementId      String
   studentProfileId String
   criterionId      String?
@@ -1195,11 +1206,13 @@ model EvaluationResult {
   feedback         String?              @db.Text
   publishedAt      DateTime?
   createdAt        DateTime             @default(now())
-  review           Review               @relation(fields: [reviewId], references: [id], onDelete: Restrict)
+  review           Review               @relation(fields: [reviewId, submissionId], references: [id, submissionId], onDelete: Restrict)
+  submission       Submission           @relation(fields: [submissionId, placementId], references: [id, placementId], onDelete: Restrict)
   placement        Placement            @relation(fields: [placementId], references: [id], onDelete: Restrict)
   studentProfile   StudentProfile       @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
   criterion        EvaluationCriterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
 
+  @@unique([reviewId, submissionId])
   @@index([placementId, publishedAt])
   @@index([studentProfileId, publishedAt])
 }
@@ -1362,9 +1375,10 @@ model FinalResult {
   publishedAt      DateTime?
   createdAt        DateTime       @default(now())
   organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  placement        Placement      @relation(fields: [placementId], references: [id], onDelete: Restrict)
+  placement        Placement      @relation(fields: [placementId, studentProfileId], references: [id, studentProfileId], onDelete: Restrict, map: "FinalResult_placementStudent_fkey")
   studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
 
+  @@unique([placementId, studentProfileId])
   @@index([organizationId, publishedAt])
   @@index([studentProfileId, publishedAt])
 }

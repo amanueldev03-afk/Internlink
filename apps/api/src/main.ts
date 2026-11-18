@@ -13,7 +13,7 @@ async function bootstrap() {
   let stage = 'application_creation';
 
   try {
-    app = await NestFactory.create(AppModule);
+    app = await NestFactory.create(AppModule, { abortOnError: false });
     stage = 'configuration';
     const config = app.get(ConfigService);
     const logger = pino({ level: config.get<string>('logLevel', 'info') });
