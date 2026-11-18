@@ -11,10 +11,10 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test": "pnpm --dir ../../packages/database db:generate && NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json --runInBand",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:watch": "pnpm --dir ../../packages/database db:generate && NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "pnpm --dir ../../packages/database db:generate && NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "dependencies": {
     "@nestjs/common": "^12.5.1",

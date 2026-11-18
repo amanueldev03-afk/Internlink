@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:575107c5b5e5cb0700a1c8b6b337f6ade8fb4825357a835ad143a1cb7eb3e975 -->
+
 # InternLink database inventory
 
 This document records the 86 Prisma models implemented in
@@ -138,8 +142,7 @@ are now represented as Prisma models.
 - Organization scoping must be applied by data-access code on every request;
   this schema does not enable PostgreSQL row-level security. Composite tenant
   foreign keys across every relationship are not implemented.
-- Status fields use enums where their lifecycle is defined. Money, grades,
-  scores, and financial support values use PostgreSQL decimal columns.
+- Status fields use enums where their lifecycle is defined. Money, new grade/score fields, and financial support values use PostgreSQL decimal columns.
 - Credentials, refresh tokens, and session tokens have hash fields. Files are
   represented by object-storage references and versions, not binary blobs.
 - Soft deletion is used on users and organizations. Historical activity uses
@@ -150,5 +153,10 @@ are now represented as Prisma models.
   migration adds the other 73 models and includes explicit conversions for the
   original free-form user status, organization type, and company-profile tenant
   association. Original status/type strings are retained in legacy columns; an
-  unrecognized user status maps to `SUSPENDED`, and an unrecognized organization
+  unrecognized user status maps to `DISABLED` when `isActive` is false and
+  `SUSPENDED` otherwise; inactive recognized `ACTIVE` also becomes `DISABLED`,
+  while other recognized states are retained. An unrecognized organization
   type maps to `OTHER`. The original migration remains unchanged.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

@@ -8,7 +8,11 @@ import { HealthModule } from '../health/health.module';
 
 describe('Database health endpoint', () => {
   let app: INestApplication;
-  const prismaMock = { $queryRaw: jest.fn<(...args: unknown[]) => Promise<unknown>>() };
+  const prismaMock = {
+    $queryRaw: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+    $executeRaw: jest.fn<() => Promise<number>>().mockResolvedValue(0),
+    $transaction: async (run: (tx: unknown) => Promise<void>) => run(prismaMock),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({

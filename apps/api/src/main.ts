@@ -11,6 +11,13 @@ import pinoHttp from 'pino-http';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+  const port = config.get<number>('port', 3001);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    Logger.error('Invalid PORT: expected an integer from 1 to 65535.');
+    await app.close();
+    process.exitCode = 1;
+    return;
+  }
   const logger = pino({ level: config.get<string>('logLevel', 'info') });
   app.use(pinoHttp({ logger }));
   app.setGlobalPrefix('api/v1');
@@ -35,7 +42,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swagger);
   SwaggerModule.setup('docs', app, document);
 
-  const port = config.get<number>('port', 3001);
   await app.listen(port);
   logger.info({ port }, 'API listening');
 }
