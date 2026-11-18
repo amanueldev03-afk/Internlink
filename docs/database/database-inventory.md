@@ -1,8 +1,9 @@
-# Proposed 86-table database inventory
+# InternLink database inventory
 
-This is a planning inventory, not an instruction to generate all tables now. The initial Prisma schema contains only the 13 foundational models listed in `schema.prisma`. Before adding the remaining models, validate ownership, lifecycle, cardinality, retention, and access rules against the workflows in `docs/workflows/`.
-
-The 86 proposed tables are grouped by domain below. `User`, `Role`, `Permission`, `UserRole`, `RolePermission`, `Organization`, `OrganizationMember`, `Department`, `StudentProfile`, `CompanyProfile`, `CompanyVerification`, `RefreshToken`, and `LoginSession` are the initial foundation; the other 73 are future candidates.
+This document records the 86 Prisma models implemented in
+`packages/database/prisma/schema.prisma`. The original 13 identity and
+organization models remain the foundation; the other 73 inventory candidates
+are now represented as Prisma models.
 
 ## Identity and access (13)
 
@@ -125,3 +126,29 @@ The 86 proposed tables are grouped by domain below. `User`, `Role`, `Permission`
 - Specify retention and deletion rules for CVs, generated documents, messages, audit records, and AI outputs.
 - Review unique constraints for student academic identity, active placement, team membership, and payment references.
 - Keep AI as an internal service and job producer; it is not a user, role, or actor in this inventory.
+
+## Implementation notes
+
+- The schema contains exactly the 86 model names in this inventory and exactly
+  ten actor roles. AI job types are internal work categories, not actor roles.
+- Organization-owned data carries `organizationId` directly or is reached
+  through an organization-scoped parent. Prisma relations have primary/foreign
+  keys, selected composite uniqueness constraints, and indexes for common
+  organization-scoped lookups.
+- Organization scoping must be applied by data-access code on every request;
+  this schema does not enable PostgreSQL row-level security. Composite tenant
+  foreign keys across every relationship are not implemented.
+- Status fields use enums where their lifecycle is defined. Money, grades,
+  scores, and financial support values use PostgreSQL decimal columns.
+- Credentials, refresh tokens, and session tokens have hash fields. Files are
+  represented by object-storage references and versions, not binary blobs.
+- Soft deletion is used on users and organizations. Historical activity uses
+  explicit history, audit, transaction, and version models; restrictive foreign
+  keys protect many historical references, while join/child records cascade
+  only where removal is appropriate.
+- The Prisma schema evolved from the committed 13-model foundation. The follow-up
+  migration adds the other 73 models and includes explicit conversions for the
+  original free-form user status, organization type, and company-profile tenant
+  association. Original status/type strings are retained in legacy columns; an
+  unrecognized user status maps to `SUSPENDED`, and an unrecognized organization
+  type maps to `OTHER`. The original migration remains unchanged.

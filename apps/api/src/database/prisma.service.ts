@@ -1,9 +1,32 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
-  async onModuleInit() {
-    await this.$connect();
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PrismaService.name);
+
+  constructor(config: ConfigService) {
+    super({
+      datasources: {
+        db: {
+          url: config.getOrThrow<string>('database.url'),
+        },
+      },
+    });
+  }
+
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.$connect();
+    } catch {
+      // Keep the API alive so its database health route can report 503 and
+      // orchestration can restart or alert without leaking connection details.
+      this.logger.warn('Database connection is unavailable during startup.');
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.$disconnect();
   }
 }

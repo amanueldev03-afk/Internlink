@@ -1,9 +1,10 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
+  "rootDir": "../src",
   "testEnvironment": "node",
-  "testRegex": ".e2e-spec.ts$",
+  "testRegex": ".*\\.e2e-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.tsx?$": ["ts-jest", {"useESM": true, "tsconfig": {"module": "ESNext"}}]
+  },
+  "extensionsToTreatAsEsm": [".ts"]
 }
