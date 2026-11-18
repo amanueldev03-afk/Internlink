@@ -31,10 +31,12 @@ it does not create users or organization data.
 
 ## Tenant and sensitive-data notes
 
-Tenant-owned records include an `organizationId` and organization-oriented
-indexes. Related records also retain foreign keys and deletion policies. Reads
-and writes must still scope by the authenticated organization in the service
-layer; the database schema alone does not implement PostgreSQL row-level
-security. Passwords and access tokens are represented by hash fields; document
+Some tenant-owned records carry `organizationId` directly; others inherit scope
+through a parent relation. For example, `InternshipPosition` has no direct
+`organizationId`, so position queries must scope through
+`program.organizationId`. Related records retain foreign keys and deletion
+policies. Reads and writes must still scope by the authenticated organization
+in the service layer; the database schema alone does not implement PostgreSQL
+row-level security. Passwords and access tokens are represented by hash fields; document
 contents and AI inputs/outputs use storage references or JSON evidence rather
 than database file blobs. Avoid storing payment credentials in these records.

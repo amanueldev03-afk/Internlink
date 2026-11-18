@@ -1,14 +1,24 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+
+const apiRoot = existsSync(resolve(process.cwd(), 'src/app.module.ts'))
+  ? process.cwd()
+  : resolve(process.cwd(), 'apps/api');
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '.env.local', '../../packages/database/.env'],
+      envFilePath: [
+        resolve(apiRoot, '.env'),
+        resolve(apiRoot, '.env.local'),
+        resolve(apiRoot, '../../packages/database/.env'),
+      ],
       load: [configuration],
     }),
     DatabaseModule,

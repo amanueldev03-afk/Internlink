@@ -1,7 +1,11 @@
-// InternLink database contract. Organization-owned records carry organizationId;
-// application authorization must scope reads/writes to that tenant. Credentials,
-// refresh tokens, payment references, and document contents are stored as hashes
-// or external object-storage references, never as plaintext secrets or blobs.
+// Organization-owned records carry organizationId directly or inherit scope
+// through an organization-scoped parent. InternshipPosition inherits its scope
+// from InternshipProgram, so position queries must use program.organizationId.
+// Application authorization must also scope reads/writes to that tenant.
+// Credentials, refresh tokens, payment references, and document contents are
+// stored as hashes or external object-storage references, never as plaintext
+// secrets or blobs. UserRole's global NULL-scope uniqueness is enforced by a
+// partial index in the full-database migration.
 
 generator client {
   provider = "prisma-client-js"
@@ -39,6 +43,7 @@ enum PermissionName {
   MANAGE_DORMITORY
   MANAGE_COMMUNICATION
   MANAGE_SETTINGS
+  MANAGE_ORGANIZATION_SETTINGS
 }
 
 enum UserStatus {
@@ -425,7 +430,7 @@ model StudentProfile {
   degreeProgram    String?
   studentNumber    String?                    @db.VarChar(80)
   yearOfStudy      Int?
-  gpa              Decimal?                   @db.Decimal(4, 2)
+  gpa              Decimal?                   @db.Decimal(5, 2)
   bio              String?                    @db.Text
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
@@ -740,6 +745,7 @@ model Application {
   placement         Placement?
 
   @@unique([studentProfileId, positionId])
+  @@unique([id, positionId, studentProfileId])
   @@index([organizationId, status, submittedAt])
   @@index([positionId, status])
 }
@@ -872,7 +878,7 @@ model Placement {
   createdAt             DateTime                  @default(now())
   updatedAt             DateTime                  @updatedAt
   organization          Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  application           Application               @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  application           Application               @relation(fields: [applicationId, positionId, studentProfileId], references: [id, positionId, studentProfileId], onDelete: Restrict, map: "Placement_applicationPositionStudent_fkey")
   position              InternshipPosition        @relation(fields: [positionId], references: [id], onDelete: Restrict)
   studentProfile        StudentProfile            @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
   agreement             InternshipAgreement?
@@ -887,6 +893,7 @@ model Placement {
 
   @@index([organizationId, status, startsAt])
   @@index([studentProfileId, status])
+  @@unique([applicationId, positionId, studentProfileId])
 }
 
 model InternshipAgreement {
@@ -1075,7 +1082,7 @@ model ImplementationMilestone {
   description    String?      @db.Text
   dueAt          DateTime?
   completedAt    DateTime?
-  sortOrder      Int          @default(0)
+  sortOrder      Int
   createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   placement      Placement    @relation(fields: [placementId], references: [id], onDelete: Restrict)
@@ -1170,7 +1177,7 @@ model EvaluationCriterion {
   description String?            @db.Text
   maxScore    Decimal            @db.Decimal(7, 2)
   weight      Decimal            @default(1) @db.Decimal(7, 4)
-  sortOrder   Int                @default(0)
+  sortOrder   Int
   rubric      EvaluationRubric   @relation(fields: [rubricId], references: [id], onDelete: Cascade)
   results     EvaluationResult[]
 
@@ -1230,6 +1237,7 @@ model Document {
 
   @@index([organizationId, status, createdAt])
   @@index([ownerUserId, createdAt])
+  @@unique([id, organizationId])
 }
 
 model DocumentVersion {
@@ -1484,6 +1492,7 @@ model FinancialSupportRequest {
 
   @@index([organizationId, status, createdAt])
   @@index([studentProfileId, status])
+  @@unique([id, studentProfileId, organizationId])
 }
 
 model Payment {
@@ -1500,7 +1509,7 @@ model Payment {
   updatedAt             DateTime                 @updatedAt
   organization          Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   studentProfile        StudentProfile           @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
-  supportRequest        FinancialSupportRequest? @relation(fields: [supportRequestId], references: [id], onDelete: SetNull)
+  supportRequest        FinancialSupportRequest? @relation(fields: [supportRequestId, studentProfileId, organizationId], references: [id, studentProfileId, organizationId], onDelete: Restrict, map: "Payment_supportRequestContext_fkey")
 
   @@index([organizationId, status, createdAt])
   @@index([studentProfileId, status])
@@ -1634,7 +1643,7 @@ model CVExtraction {
   completedAt      DateTime?
   organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
-  document         Document       @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  document         Document       @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "CVExtraction_documentOrganization_fkey")
   requestedBy      User           @relation(fields: [requestedById], references: [id], onDelete: Restrict)
 
   @@index([organizationId, status, createdAt])

@@ -2,18 +2,26 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { DatabaseModule } from '../database/database.module';
 import { PrismaService } from '../database/prisma.service';
-import { HealthModule } from '../health/health.module';
+import { AppModule } from '../app.module';
 
 describe('Database health endpoint', () => {
   let app: INestApplication;
-  const prismaMock = { $queryRaw: jest.fn<(...args: unknown[]) => Promise<unknown>>() };
+  const queryRaw = jest.fn<(...args: unknown[]) => Promise<unknown>>();
+  const prismaMock = {
+    $transaction: jest.fn<
+      (
+        callback: (client: { $queryRaw: typeof queryRaw }) => Promise<unknown>,
+        options: { maxWait: number; timeout: number },
+      ) => Promise<unknown>
+    >(),
+  };
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [DatabaseModule, HealthModule],
-    })
+    prismaMock.$transaction.mockImplementation(async (callback) =>
+      callback({ $queryRaw: queryRaw }),
+    );
+    const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
       .compile();
@@ -28,11 +36,11 @@ describe('Database health endpoint', () => {
   });
 
   beforeEach(() => {
-    prismaMock.$queryRaw.mockReset();
+    queryRaw.mockReset();
   });
 
   it('returns 200 and safe connected status when the query succeeds', async () => {
-    prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+    queryRaw.mockResolvedValue([{ '?column?': 1 }]);
     const address = app.getHttpServer().address() as AddressInfo;
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/health/database`);
@@ -42,7 +50,7 @@ describe('Database health endpoint', () => {
   });
 
   it('returns 503 and safe disconnected status when the query fails', async () => {
-    prismaMock.$queryRaw.mockRejectedValue(new Error('secret connection details'));
+    queryRaw.mockRejectedValue(new Error('secret connection details'));
     const address = app.getHttpServer().address() as AddressInfo;
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/health/database`);

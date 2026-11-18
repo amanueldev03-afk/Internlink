@@ -150,5 +150,7 @@ are now represented as Prisma models.
   migration adds the other 73 models and includes explicit conversions for the
   original free-form user status, organization type, and company-profile tenant
   association. Original status/type strings are retained in legacy columns; an
-  unrecognized user status maps to `SUSPENDED`, and an unrecognized organization
-  type maps to `OTHER`. The original migration remains unchanged.
+  unrecognized user status maps to `DISABLED` when `isActive` is false and to
+  `SUSPENDED` otherwise. An `ACTIVE` legacy status with `isActive` false also
+  maps to `DISABLED`. An unrecognized organization type maps to `OTHER`. The
+  original migration remains unchanged.

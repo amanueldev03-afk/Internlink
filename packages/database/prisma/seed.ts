@@ -15,7 +15,7 @@ const roleSeeds: ReadonlyArray<{
   {
     name: RoleName.DEPARTMENT_COORDINATOR,
     description: 'Department coordinator',
-    permissions: [PermissionName.VIEW_STUDENTS, PermissionName.MANAGE_SETTINGS],
+    permissions: [PermissionName.VIEW_STUDENTS, PermissionName.MANAGE_ORGANIZATION_SETTINGS],
   },
   {
     name: RoleName.INTERNSHIP_OFFICER,
@@ -95,16 +95,21 @@ const permissionDescriptions: Record<PermissionName, string> = {
   MANAGE_FINANCE: 'Manage financial support and payment records',
   MANAGE_DORMITORY: 'Manage dormitory, room, and key records',
   MANAGE_COMMUNICATION: 'Manage conversations, meetings, and notifications',
-  MANAGE_SETTINGS: 'Manage organization and system settings',
+  MANAGE_SETTINGS: 'Manage global system settings',
+  MANAGE_ORGANIZATION_SETTINGS: 'Manage settings for the assigned organization',
 };
 
 async function main() {
+  const permissionIds = new Map<PermissionName, string>();
+
   for (const name of Object.values(PermissionName)) {
-    await prisma.permission.upsert({
+    const permission = await prisma.permission.upsert({
       where: { name },
       update: { description: permissionDescriptions[name] },
       create: { name, description: permissionDescriptions[name] },
+      select: { id: true },
     });
+    permissionIds.set(name, permission.id);
   }
 
   for (const roleSeed of roleSeeds) {
@@ -114,18 +119,33 @@ async function main() {
       create: { name: roleSeed.name, description: roleSeed.description },
     });
 
+    const rolePermissionIds = roleSeed.permissions.map((permissionName) => {
+      const permissionId = permissionIds.get(permissionName);
+      if (!permissionId) {
+        throw new Error(`Permission ID missing for ${permissionName}.`);
+      }
+      return permissionId;
+    });
+
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: role.id,
+        permissionId: { notIn: rolePermissionIds },
+      },
+    });
+
     for (const permissionName of roleSeed.permissions) {
-      const permission = await prisma.permission.findUniqueOrThrow({
-        where: { name: permissionName },
-        select: { id: true },
-      });
+      const permissionId = permissionIds.get(permissionName);
+      if (!permissionId) {
+        throw new Error(`Permission ID missing for ${permissionName}.`);
+      }
 
       await prisma.rolePermission.upsert({
         where: {
-          roleId_permissionId: { roleId: role.id, permissionId: permission.id },
+          roleId_permissionId: { roleId: role.id, permissionId },
         },
         update: {},
-        create: { roleId: role.id, permissionId: permission.id },
+        create: { roleId: role.id, permissionId },
       });
     }
   }
