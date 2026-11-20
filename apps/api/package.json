@@ -11,10 +11,17 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings 0",
     "typecheck": "tsc --noEmit",
+<<<<<<< HEAD
     "test": "pnpm --dir ../../packages/database db:generate && node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json --runInBand",
     "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch",
     "test:cov": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage"
+=======
+    "test": "pnpm --dir ../../packages/database db:generate && NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json --runInBand",
+    "test:watch": "pnpm --dir ../../packages/database db:generate && NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "pnpm --dir ../../packages/database db:generate && NODE_OPTIONS=--experimental-vm-modules jest --coverage"
+>>>>>>> origin/feature/backend-foundation
   },
   "dependencies": {
     "@nestjs/common": "^12.5.1",

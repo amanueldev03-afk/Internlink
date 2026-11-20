@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:39ee4d1ad748add3b798356a41d8bbf38feb6303254463f3ef022a379680680d -->
+
 # InternLink
 
 InternLink is an AI-powered university internship and career development platform.
@@ -31,12 +35,18 @@ InternLink is an AI-powered university internship and career development platfor
    cp .env.example .env
    cp .env.example packages/database/.env
    cp apps/api/.env.example apps/api/.env
+   # Copy the local database URLs for both API and Prisma commands:
+   rg '^(DATABASE_URL|DIRECT_URL)=' .env.example > packages/database/.env
    cp apps/web/.env.example apps/web/.env
    cp apps/worker/.env.example apps/worker/.env
    cp services/ai-service/.env.example services/ai-service/.env
 3. Start infrastructure:
    docker compose up -d postgres redis minio
-4. Start API:
+4. Generate the client, apply migrations, and seed the local database:
+   pnpm --dir packages/database db:generate
+   pnpm --dir packages/database db:migrate:deploy
+   pnpm --dir packages/database db:seed
+   Start API:
    pnpm --dir apps/api start:dev
 5. Start worker:
    pnpm --dir apps/worker dev
@@ -93,3 +103,6 @@ For Neon, instead copy `packages/database/.env.example` to
 See the `docs/` directory for plan and architecture documents.
 
 # Internlink
+
+
+<!-- /coderabbit-ai-generated:v1 -->

@@ -231,6 +231,7 @@ enum AIJobType {
 
 model User {
   id                          String                     @id @default(cuid())
+<<<<<<< HEAD
   email                       String                     @unique @db.Text
   phone                       String?                    @db.Text
   passwordHash                String                     @db.Text
@@ -238,6 +239,15 @@ model User {
   lastName                    String                     @db.Text
   status                      UserStatus                 @default(ACTIVE)
   legacyStatus                String?                    @db.Text
+=======
+  email                       String                     @unique
+  phone                       String?
+  passwordHash                String
+  firstName                   String
+  lastName                    String
+  status                      UserStatus                 @default(ACTIVE)
+  legacyStatus                String?
+>>>>>>> origin/feature/backend-foundation
   /// Legacy compatibility field retained during the initial schema expansion.
   isActive                    Boolean                    @default(true)
   emailVerifiedAt             DateTime?
@@ -296,7 +306,11 @@ model User {
 model Role {
   id          String           @id @default(cuid())
   name        RoleName         @unique
+<<<<<<< HEAD
   description String?          @db.Text
+=======
+  description String?
+>>>>>>> origin/feature/backend-foundation
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   userRoles   UserRole[]
@@ -306,7 +320,11 @@ model Role {
 model Permission {
   id          String           @id @default(cuid())
   name        PermissionName   @unique
+<<<<<<< HEAD
   description String?          @db.Text
+=======
+  description String?
+>>>>>>> origin/feature/backend-foundation
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   roles       RolePermission[]
@@ -322,6 +340,7 @@ model UserRole {
   role           Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Global grants are additionally unique via a partial index in the SQL migration.
   @@unique([userId, roleId, organizationId])
   @@index([organizationId, roleId])
   @@index([userId, roleId])
@@ -341,10 +360,17 @@ model RolePermission {
 
 model Organization {
   id                    String                     @id @default(cuid())
+<<<<<<< HEAD
   name                  String                     @db.Text
   slug                  String                     @unique @db.Text
   type                  OrganizationType
   legacyType            String?                    @db.Text
+=======
+  name                  String
+  slug                  String                     @unique
+  type                  OrganizationType
+  legacyType            String?
+>>>>>>> origin/feature/backend-foundation
   description           String?                    @db.Text
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
@@ -404,8 +430,13 @@ model OrganizationMember {
 model Department {
   id             String              @id @default(cuid())
   organizationId String
+<<<<<<< HEAD
   name           String              @db.Text
   code           String?             @db.Text
+=======
+  name           String
+  code           String?
+>>>>>>> origin/feature/backend-foundation
   description    String?             @db.Text
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
@@ -428,7 +459,11 @@ model StudentProfile {
   /// Legacy fields retained so existing profile data is not discarded.
   universityName   String?
   degreeProgram    String?
+<<<<<<< HEAD
   studentNumber    String?                    @db.Text
+=======
+  studentNumber    String?
+>>>>>>> origin/feature/backend-foundation
   yearOfStudy      Int?
   gpa              Float?                     @db.DoublePrecision
   bio              String?                    @db.Text
@@ -461,9 +496,15 @@ model CompanyProfile {
   id             String               @id @default(cuid())
   userId         String               @unique
   organizationId String
+<<<<<<< HEAD
   companyName    String               @db.Text
   website        String?              @db.Text
   industry       String?              @db.Text
+=======
+  companyName    String
+  website        String?
+  industry       String?
+>>>>>>> origin/feature/backend-foundation
   description    String?              @db.Text
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
@@ -493,7 +534,11 @@ model CompanyVerification {
 model RefreshToken {
   id        String    @id @default(cuid())
   userId    String
+<<<<<<< HEAD
   tokenHash String    @unique @db.Text
+=======
+  tokenHash String    @unique
+>>>>>>> origin/feature/backend-foundation
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
@@ -505,9 +550,15 @@ model RefreshToken {
 model LoginSession {
   id        String    @id @default(cuid())
   userId    String
+<<<<<<< HEAD
   tokenHash String    @unique @db.Text
   device    String?   @db.Text
   ipAddress String?   @db.Text
+=======
+  tokenHash String    @unique
+  device    String?
+  ipAddress String?
+>>>>>>> origin/feature/backend-foundation
   createdAt DateTime  @default(now())
   expiresAt DateTime
   revokedAt DateTime?

@@ -100,6 +100,7 @@ const permissionDescriptions: Record<PermissionName, string> = {
 };
 
 async function main() {
+<<<<<<< HEAD
   await prisma.$transaction(
     async (transaction) => {
       const permissionIds = new Map<PermissionName, string>();
@@ -129,6 +130,40 @@ async function main() {
         if (!roleId) {
           throw new Error(`Role ID missing for ${roleSeed.name}.`);
         }
+=======
+  await prisma.$transaction(async (tx) => {
+    for (const name of Object.values(PermissionName)) {
+      await tx.permission.upsert({
+        where: { name },
+        update: { description: permissionDescriptions[name] },
+        create: { name, description: permissionDescriptions[name] },
+      });
+    }
+
+    for (const roleSeed of roleSeeds) {
+      const role = await tx.role.upsert({
+        where: { name: roleSeed.name },
+        update: { description: roleSeed.description },
+        create: { name: roleSeed.name, description: roleSeed.description },
+      });
+
+      for (const permissionName of roleSeed.permissions) {
+        const permission = await tx.permission.findUniqueOrThrow({
+          where: { name: permissionName },
+          select: { id: true },
+        });
+
+        await tx.rolePermission.upsert({
+          where: {
+            roleId_permissionId: { roleId: role.id, permissionId: permission.id },
+          },
+          update: {},
+          create: { roleId: role.id, permissionId: permission.id },
+        });
+      }
+    }
+  });
+>>>>>>> origin/feature/backend-foundation
 
         const rolePermissionIds = roleSeed.permissions.map((permissionName) => {
           const permissionId = permissionIds.get(permissionName);

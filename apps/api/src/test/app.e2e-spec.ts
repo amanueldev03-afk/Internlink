@@ -7,6 +7,7 @@ import { AppModule } from '../app.module';
 
 describe('Database health endpoint', () => {
   let app: INestApplication;
+<<<<<<< HEAD
   const queryRaw = jest.fn<(...args: unknown[]) => Promise<unknown>>();
   const prismaMock = {
     $transaction: jest.fn<
@@ -15,6 +16,12 @@ describe('Database health endpoint', () => {
         options: { maxWait: number; timeout: number },
       ) => Promise<unknown>
     >(),
+=======
+  const prismaMock = {
+    $queryRaw: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+    $executeRaw: jest.fn<() => Promise<number>>().mockResolvedValue(0),
+    $transaction: async (run: (tx: unknown) => Promise<void>) => run(prismaMock),
+>>>>>>> origin/feature/backend-foundation
   };
 
   beforeAll(async () => {

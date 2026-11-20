@@ -1,3 +1,5 @@
+-- Apply only in the maintenance window described in packages/database/README.md.
+-- Stop API, workers, and other database writers before prisma migrate deploy.
 -- CreateEnum
 CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INVITED', 'SUSPENDED', 'DISABLED');
 
@@ -105,14 +107,22 @@ ALTER COLUMN "passwordHash" SET DATA TYPE TEXT,
 ALTER COLUMN "firstName" SET DATA TYPE TEXT,
 ALTER COLUMN "lastName" SET DATA TYPE TEXT;
 
--- Preserve and map any historical free-form statuses; unknown values are disabled.
+-- Preserve known inactive states; only inactive ACTIVE is overridden to DISABLED.
 ALTER TABLE "User" RENAME COLUMN "status" TO "legacyStatus";
 ALTER TABLE "User" ALTER COLUMN "legacyStatus" TYPE TEXT,
+<<<<<<< HEAD
 ALTER COLUMN "legacyStatus" DROP NOT NULL;
 ALTER TABLE "User" ADD COLUMN "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE';
 UPDATE "User" SET "status" = CASE
   WHEN upper("legacyStatus") = 'ACTIVE' AND NOT "isActive"
     THEN 'DISABLED'::"UserStatus"
+=======
+ALTER COLUMN "legacyStatus" DROP DEFAULT,
+ALTER COLUMN "legacyStatus" DROP NOT NULL;
+ALTER TABLE "User" ADD COLUMN "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE';
+UPDATE "User" SET "status" = CASE
+  WHEN NOT "isActive" AND upper("legacyStatus") = 'ACTIVE' THEN 'DISABLED'::"UserStatus"
+>>>>>>> origin/feature/backend-foundation
   WHEN upper("legacyStatus") IN ('ACTIVE', 'INVITED', 'SUSPENDED', 'DISABLED')
     THEN upper("legacyStatus")::"UserStatus"
   WHEN NOT "isActive" THEN 'DISABLED'::"UserStatus"
@@ -160,7 +170,11 @@ ALTER TABLE "StudentProfile" ADD COLUMN     "departmentId" TEXT,
 ADD COLUMN     "programId" TEXT,
 ADD COLUMN     "universityId" TEXT,
 ALTER COLUMN "studentNumber" SET DATA TYPE TEXT,
+<<<<<<< HEAD
 ALTER COLUMN "gpa" SET DATA TYPE DECIMAL(5,2);
+=======
+ALTER COLUMN "gpa" SET DATA TYPE DOUBLE PRECISION;
+>>>>>>> origin/feature/backend-foundation
 
 -- AlterTable
 ALTER TABLE "CompanyProfile" ADD COLUMN     "organizationId" TEXT,
@@ -168,6 +182,7 @@ ALTER COLUMN "companyName" SET DATA TYPE TEXT,
 ALTER COLUMN "website" SET DATA TYPE TEXT,
 ALTER COLUMN "industry" SET DATA TYPE TEXT;
 
+<<<<<<< HEAD
 -- Attach each legacy profile to the organization inserted for that profile.
 -- Slug collisions are resolved with a suffix; an ID collision is a hard error.
 DO $$
@@ -219,6 +234,29 @@ SELECT
   CURRENT_TIMESTAMP
 FROM "CompanyProfile" cp
 ON CONFLICT ("organizationId", "userId") DO NOTHING;
+=======
+-- Existing company profiles predate organizations. Give each profile a stable,
+-- tenant-scoped legacy organization before requiring the new foreign key.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM "CompanyProfile" cp JOIN "Organization" o
+      ON o."slug" = 'legacy-company-' || substr(md5(cp."id"), 1, 24)
+      OR o."id" = 'legacy-company-' || substr(md5(cp."id"), 1, 24)
+  ) THEN
+    RAISE EXCEPTION 'Legacy company organization identifier conflict: resolve reserved legacy-company identifiers before retrying migration';
+  END IF;
+END $$;
+
+INSERT INTO "Organization" ("id", "name", "slug", "type", "createdAt", "updatedAt")
+SELECT 'legacy-company-' || substr(md5(cp."id"), 1, 24), cp."companyName",
+       'legacy-company-' || substr(md5(cp."id"), 1, 24), 'COMPANY'::"OrganizationType",
+       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM "CompanyProfile" cp;
+
+UPDATE "CompanyProfile" cp
+SET "organizationId" = 'legacy-company-' || substr(md5(cp."id"), 1, 24);
+>>>>>>> origin/feature/backend-foundation
 
 ALTER TABLE "CompanyProfile" ALTER COLUMN "organizationId" SET NOT NULL;
 
@@ -1714,6 +1752,8 @@ CREATE INDEX "UserRole_organizationId_roleId_idx" ON "UserRole"("organizationId"
 -- CreateIndex
 CREATE INDEX "UserRole_userId_roleId_idx" ON "UserRole"("userId", "roleId");
 
+CREATE UNIQUE INDEX "UserRole_global_userId_roleId_key" ON "UserRole"("userId", "roleId") WHERE "organizationId" IS NULL;
+
 -- CreateIndex
 CREATE UNIQUE INDEX "UserRole_userId_roleId_organizationId_key" ON "UserRole"("userId", "roleId", "organizationId");
 
@@ -1753,7 +1793,7 @@ WHERE department."id" = duplicate."id"
   AND duplicate.duplicate_number > 1;
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Department_organizationId_code_key" ON "Department"("organizationId", "code");
+CREATE INDEX "Department_organizationId_code_idx" ON "Department"("organizationId", "code");
 
 -- CreateIndex
 CREATE INDEX "StudentProfile_departmentId_programId_idx" ON "StudentProfile"("departmentId", "programId");
@@ -1805,12 +1845,34 @@ WHERE duplicate."tokenHash" = retained."tokenHash"
   AND duplicate."id" > retained."id";
 
 -- CreateIndex
+-- Keep the lexically smallest id and revoke every ambiguous hash.
+-- Unique hashes are untouched, including their existing revocation state.
+WITH duplicates AS (
+  SELECT "tokenHash", min("id") AS keeper, min("revokedAt") AS revoked
+  FROM "RefreshToken" GROUP BY "tokenHash" HAVING count(*) > 1
+)
+UPDATE "RefreshToken" t SET "revokedAt" = coalesce(d.revoked, CURRENT_TIMESTAMP)
+FROM duplicates d WHERE t."id" = d.keeper;
+DELETE FROM "RefreshToken" t USING "RefreshToken" keeper
+WHERE t."tokenHash" = keeper."tokenHash" AND t."id" > keeper."id";
+
 CREATE UNIQUE INDEX "RefreshToken_tokenHash_key" ON "RefreshToken"("tokenHash");
 
 -- CreateIndex
 CREATE INDEX "RefreshToken_userId_expiresAt_idx" ON "RefreshToken"("userId", "expiresAt");
 
 -- CreateIndex
+-- Keep the lexically smallest id and revoke every ambiguous hash.
+-- Unique hashes are untouched, including their existing revocation state.
+WITH duplicates AS (
+  SELECT "tokenHash", min("id") AS keeper, min("revokedAt") AS revoked
+  FROM "LoginSession" GROUP BY "tokenHash" HAVING count(*) > 1
+)
+UPDATE "LoginSession" t SET "revokedAt" = coalesce(d.revoked, CURRENT_TIMESTAMP)
+FROM duplicates d WHERE t."id" = d.keeper;
+DELETE FROM "LoginSession" t USING "LoginSession" keeper
+WHERE t."tokenHash" = keeper."tokenHash" AND t."id" > keeper."id";
+
 CREATE UNIQUE INDEX "LoginSession_tokenHash_key" ON "LoginSession"("tokenHash");
 
 -- CreateIndex
