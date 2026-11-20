@@ -100,57 +100,68 @@ const permissionDescriptions: Record<PermissionName, string> = {
 };
 
 async function main() {
-  const permissionIds = new Map<PermissionName, string>();
+  await prisma.$transaction(
+    async (transaction) => {
+      const permissionIds = new Map<PermissionName, string>();
+      const roleIds = new Map<RoleName, string>();
 
-  for (const name of Object.values(PermissionName)) {
-    const permission = await prisma.permission.upsert({
-      where: { name },
-      update: { description: permissionDescriptions[name] },
-      create: { name, description: permissionDescriptions[name] },
-      select: { id: true },
-    });
-    permissionIds.set(name, permission.id);
-  }
-
-  for (const roleSeed of roleSeeds) {
-    const role = await prisma.role.upsert({
-      where: { name: roleSeed.name },
-      update: { description: roleSeed.description },
-      create: { name: roleSeed.name, description: roleSeed.description },
-    });
-
-    const rolePermissionIds = roleSeed.permissions.map((permissionName) => {
-      const permissionId = permissionIds.get(permissionName);
-      if (!permissionId) {
-        throw new Error(`Permission ID missing for ${permissionName}.`);
-      }
-      return permissionId;
-    });
-
-    await prisma.rolePermission.deleteMany({
-      where: {
-        roleId: role.id,
-        permissionId: { notIn: rolePermissionIds },
-      },
-    });
-
-    for (const permissionName of roleSeed.permissions) {
-      const permissionId = permissionIds.get(permissionName);
-      if (!permissionId) {
-        throw new Error(`Permission ID missing for ${permissionName}.`);
+      for (const name of Object.values(PermissionName)) {
+        const permission = await transaction.permission.upsert({
+          where: { name },
+          update: { description: permissionDescriptions[name] },
+          create: { name, description: permissionDescriptions[name] },
+          select: { id: true },
+        });
+        permissionIds.set(name, permission.id);
       }
 
-      await prisma.rolePermission.upsert({
-        where: {
-          roleId_permissionId: { roleId: role.id, permissionId },
-        },
-        update: {},
-        create: { roleId: role.id, permissionId },
-      });
-    }
-  }
+      for (const roleSeed of roleSeeds) {
+        const role = await transaction.role.upsert({
+          where: { name: roleSeed.name },
+          update: { description: roleSeed.description },
+          create: { name: roleSeed.name, description: roleSeed.description },
+        });
+        roleIds.set(roleSeed.name, role.id);
+      }
 
-  console.log(`Seeded ${roleSeeds.length} actor roles and ${Object.values(PermissionName).length} permissions.`);
+      for (const roleSeed of roleSeeds) {
+        const roleId = roleIds.get(roleSeed.name);
+        if (!roleId) {
+          throw new Error(`Role ID missing for ${roleSeed.name}.`);
+        }
+
+        const rolePermissionIds = roleSeed.permissions.map((permissionName) => {
+          const permissionId = permissionIds.get(permissionName);
+          if (!permissionId) {
+            throw new Error(`Permission ID missing for ${permissionName}.`);
+          }
+          return permissionId;
+        });
+
+        await transaction.rolePermission.deleteMany({
+          where: {
+            roleId,
+            permissionId: { notIn: rolePermissionIds },
+          },
+        });
+
+        for (const permissionId of rolePermissionIds) {
+          await transaction.rolePermission.upsert({
+            where: {
+              roleId_permissionId: { roleId, permissionId },
+            },
+            update: {},
+            create: { roleId, permissionId },
+          });
+        }
+      }
+    },
+    { maxWait: 10_000, timeout: 120_000 },
+  );
+
+  console.log(
+    `Seeded ${roleSeeds.length} actor roles and ${Object.values(PermissionName).length} permissions.`,
+  );
 }
 
 main()

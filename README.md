@@ -29,6 +29,7 @@ InternLink is an AI-powered university internship and career development platfor
    pnpm install
 2. Create local environment files from the examples:
    cp .env.example .env
+   cp .env.example packages/database/.env
    cp apps/api/.env.example apps/api/.env
    cp apps/web/.env.example apps/web/.env
    cp apps/worker/.env.example apps/worker/.env
@@ -74,12 +75,21 @@ Inspect services with `docker compose ps` and `docker compose logs -f api`. Stop
 
 ## Database setup
 
-Run the foundational Prisma migration and seed after PostgreSQL is healthy:
+For local Docker PostgreSQL, copy the root example into
+`packages/database/.env` as shown above. Start PostgreSQL, then generate the
+Prisma Client, apply migrations, and seed reference data:
 
+docker compose up -d postgres
+pnpm --dir packages/database db:generate
 pnpm --dir packages/database db:migrate
 pnpm --dir packages/database db:seed
+
+For Neon, instead copy `packages/database/.env.example` to
+`packages/database/.env` and set its pooled `DATABASE_URL` and direct
+`DIRECT_URL` to the same Neon database. Then run the Prisma commands above.
 
 ## Documentation
 
 See the `docs/` directory for plan and architecture documents.
+
 # Internlink

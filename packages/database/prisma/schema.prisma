@@ -4,8 +4,8 @@
 // Application authorization must also scope reads/writes to that tenant.
 // Credentials, refresh tokens, payment references, and document contents are
 // stored as hashes or external object-storage references, never as plaintext
-// secrets or blobs. UserRole's global NULL-scope uniqueness is enforced by a
-// partial index in the full-database migration.
+// secrets or blobs. The UserRole NULL-scope uniqueness and the one-open-key-
+// checkout rule are enforced by partial indexes in the full-database migration.
 
 generator client {
   provider = "prisma-client-js"
@@ -231,11 +231,11 @@ enum AIJobType {
 
 model User {
   id                          String                     @id @default(cuid())
-  email                       String                     @unique @db.VarChar(320)
-  phone                       String?                    @db.VarChar(32)
-  passwordHash                String                     @db.VarChar(255)
-  firstName                   String                     @db.VarChar(100)
-  lastName                    String                     @db.VarChar(100)
+  email                       String                     @unique @db.Text
+  phone                       String?                    @db.Text
+  passwordHash                String                     @db.Text
+  firstName                   String                     @db.Text
+  lastName                    String                     @db.Text
   status                      UserStatus                 @default(ACTIVE)
   legacyStatus                String?                    @db.Text
   /// Legacy compatibility field retained during the initial schema expansion.
@@ -296,7 +296,7 @@ model User {
 model Role {
   id          String           @id @default(cuid())
   name        RoleName         @unique
-  description String?          @db.VarChar(500)
+  description String?          @db.Text
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   userRoles   UserRole[]
@@ -306,7 +306,7 @@ model Role {
 model Permission {
   id          String           @id @default(cuid())
   name        PermissionName   @unique
-  description String?          @db.VarChar(500)
+  description String?          @db.Text
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   roles       RolePermission[]
@@ -341,8 +341,8 @@ model RolePermission {
 
 model Organization {
   id                    String                     @id @default(cuid())
-  name                  String                     @db.VarChar(200)
-  slug                  String                     @unique @db.VarChar(120)
+  name                  String                     @db.Text
+  slug                  String                     @unique @db.Text
   type                  OrganizationType
   legacyType            String?                    @db.Text
   description           String?                    @db.Text
@@ -404,8 +404,8 @@ model OrganizationMember {
 model Department {
   id             String              @id @default(cuid())
   organizationId String
-  name           String              @db.VarChar(160)
-  code           String?             @db.VarChar(40)
+  name           String              @db.Text
+  code           String?             @db.Text
   description    String?             @db.Text
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
@@ -415,7 +415,7 @@ model Department {
   advisors       DepartmentAdvisor[]
 
   @@unique([organizationId, name])
-  @@unique([organizationId, code])
+  @@index([organizationId, code])
   @@index([organizationId])
 }
 
@@ -428,9 +428,9 @@ model StudentProfile {
   /// Legacy fields retained so existing profile data is not discarded.
   universityName   String?
   degreeProgram    String?
-  studentNumber    String?                    @db.VarChar(80)
+  studentNumber    String?                    @db.Text
   yearOfStudy      Int?
-  gpa              Decimal?                   @db.Decimal(5, 2)
+  gpa              Float?                     @db.DoublePrecision
   bio              String?                    @db.Text
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
@@ -461,9 +461,9 @@ model CompanyProfile {
   id             String               @id @default(cuid())
   userId         String               @unique
   organizationId String
-  companyName    String               @db.VarChar(200)
-  website        String?              @db.VarChar(500)
-  industry       String?              @db.VarChar(120)
+  companyName    String               @db.Text
+  website        String?              @db.Text
+  industry       String?              @db.Text
   description    String?              @db.Text
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
@@ -493,7 +493,7 @@ model CompanyVerification {
 model RefreshToken {
   id        String    @id @default(cuid())
   userId    String
-  tokenHash String    @unique @db.VarChar(255)
+  tokenHash String    @unique @db.Text
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
@@ -505,9 +505,9 @@ model RefreshToken {
 model LoginSession {
   id        String    @id @default(cuid())
   userId    String
-  tokenHash String    @unique @db.VarChar(255)
-  device    String?   @db.VarChar(255)
-  ipAddress String?   @db.VarChar(64)
+  tokenHash String    @unique @db.Text
+  device    String?   @db.Text
+  ipAddress String?   @db.Text
   createdAt DateTime  @default(now())
   expiresAt DateTime
   revokedAt DateTime?
@@ -751,6 +751,7 @@ model Application {
 
   @@unique([studentProfileId, positionId])
   @@unique([id, positionId, studentProfileId, organizationId])
+  @@unique([id, positionId])
   @@index([organizationId, status, submittedAt])
   @@index([positionId, status])
 }
@@ -849,7 +850,7 @@ model Interview {
   meetingUrl    String?            @db.VarChar(1000)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
-  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  application   Application        @relation(fields: [applicationId, positionId], references: [id, positionId], onDelete: Restrict, map: "Interview_applicationPosition_fkey")
   position      InternshipPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
   interviewer   User               @relation("InterviewInterviewer", fields: [interviewerId], references: [id], onDelete: Restrict)
   invitee       User               @relation("InterviewInvitee", fields: [inviteeId], references: [id], onDelete: Restrict)
@@ -896,11 +897,13 @@ model Placement {
   presentationSchedules PresentationSchedule[]
   finalResult           FinalResult?
 
-  @@index([organizationId, status, startsAt])
-  @@index([studentProfileId, status])
   @@unique([applicationId, positionId, studentProfileId])
   @@unique([id, studentProfileId])
-  @@unique([applicationId, positionId, studentProfileId, organizationId])
+  @@unique([applicationId, positionId, studentProfileId, organizationId], map: "Placement_application_org_key")
+  @@unique([id, organizationId])
+  @@unique([id, studentProfileId, organizationId])
+  @@index([organizationId, status, startsAt])
+  @@index([studentProfileId, status])
 }
 
 model InternshipAgreement {
@@ -921,12 +924,13 @@ model InternshipTeam {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  placement      Placement           @relation(fields: [placementId], references: [id], onDelete: Restrict)
+  placement      Placement           @relation(fields: [placementId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "InternshipTeam_placementOrganization_fkey")
   members        TeamMember[]
   advisors       AdvisorAssignment[]
   tasks          TeamTask[]
   meetings       Meeting[]
 
+  @@unique([placementId, organizationId])
   @@index([organizationId])
 }
 
@@ -1108,7 +1112,7 @@ model Submission {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  placement         Placement           @relation(fields: [placementId], references: [id], onDelete: Restrict)
+  placement         Placement           @relation(fields: [placementId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "Submission_placementOrganization_fkey")
   versions          SubmissionVersion[]
   reviews           Review[]
   evaluationResults EvaluationResult[]
@@ -1208,7 +1212,7 @@ model EvaluationResult {
   createdAt        DateTime             @default(now())
   review           Review               @relation(fields: [reviewId, submissionId], references: [id, submissionId], onDelete: Restrict)
   submission       Submission           @relation(fields: [submissionId, placementId], references: [id, placementId], onDelete: Restrict)
-  placement        Placement            @relation(fields: [placementId], references: [id], onDelete: Restrict)
+  placement        Placement            @relation(fields: [placementId, studentProfileId], references: [id, studentProfileId], onDelete: Restrict, map: "EvaluationResult_placementStudent_fkey")
   studentProfile   StudentProfile       @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
   criterion        EvaluationCriterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
 
@@ -1248,9 +1252,9 @@ model Document {
   cvExtractions        CVExtraction[]
   messages             Message[]
 
+  @@unique([id, organizationId])
   @@index([organizationId, status, createdAt])
   @@index([ownerUserId, createdAt])
-  @@unique([id, organizationId])
 }
 
 model DocumentVersion {
@@ -1375,10 +1379,10 @@ model FinalResult {
   publishedAt      DateTime?
   createdAt        DateTime       @default(now())
   organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  placement        Placement      @relation(fields: [placementId, studentProfileId], references: [id, studentProfileId], onDelete: Restrict, map: "FinalResult_placementStudent_fkey")
+  placement        Placement      @relation(fields: [placementId, studentProfileId, organizationId], references: [id, studentProfileId, organizationId], onDelete: Restrict, map: "FinalResult_placementStudentOrg_fkey")
   studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
 
-  @@unique([placementId, studentProfileId])
+  @@unique([placementId, studentProfileId, organizationId])
   @@index([organizationId, publishedAt])
   @@index([studentProfileId, publishedAt])
 }
@@ -1504,9 +1508,9 @@ model FinancialSupportRequest {
   reviewer         User?          @relation("SupportReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
   payments         Payment[]
 
+  @@unique([id, studentProfileId, organizationId])
   @@index([organizationId, status, createdAt])
   @@index([studentProfileId, status])
-  @@unique([id, studentProfileId, organizationId])
 }
 
 model Payment {

@@ -11,23 +11,43 @@ pooled connection string (hostname includes `-pooler`) and `DIRECT_URL` to the
 unpooled connection string. Do not commit `.env` or put database credentials in
 source control. Both URLs must target the same Neon database and use TLS.
 
+## Local Docker environment
+
+From the repository root, copy the root example to this package's environment
+file. It contains the local PostgreSQL URLs used by `compose.yaml`:
+
+```sh
+cp .env.example packages/database/.env
+docker compose up -d postgres
+```
+
+Use this for local development; keep the Neon setup above as a separate
+environment option. Do not copy local placeholder credentials into a deployed
+environment.
+
 ## Commands
 
 Run from the repository root:
 
 ```sh
 pnpm --dir packages/database db:generate
-pnpm --dir packages/database db:status
 pnpm --dir packages/database db:migrate
-pnpm --dir packages/database db:migrate:deploy
 pnpm --dir packages/database db:seed
+pnpm --dir packages/database db:status
 pnpm --dir packages/database typecheck
 ```
 
-Use `db:migrate` to create/apply a development migration. Use
-`db:migrate:deploy` to apply committed migrations to a deployed database. Seed
-is idempotent and creates the ten actor roles and permission reference rows;
-it does not create users or organization data.
+Use `db:migrate` to create/apply a development migration. The direct connection
+role must have `CREATEDB` for Prisma Migrate's shadow database, unless a
+separate shadow database is configured with `shadowDatabaseUrl`. Use
+`db:migrate:deploy` instead to apply committed migrations without a shadow
+database. Run either migration command before `db:seed`, then use `db:status`
+to check the resulting migration state.
+
+Seed is idempotent and creates the ten actor roles and permission reference
+rows; it does not create users or organization data. The built-in role
+permission matrix is authoritative: `db:seed` removes grants from built-in
+roles when those grants are not included in that matrix.
 
 ## Tenant and sensitive-data notes
 

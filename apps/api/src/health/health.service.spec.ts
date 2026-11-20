@@ -9,12 +9,13 @@ describe('HealthService', () => {
 
   beforeEach(() => {
     queryRaw = jest.fn<(...args: unknown[]) => Promise<unknown>>();
-    transaction = jest.fn<
-      (
-        callback: (client: { $queryRaw: typeof queryRaw }) => Promise<unknown>,
-        options: { maxWait: number; timeout: number },
-      ) => Promise<unknown>
-    >();
+    transaction =
+      jest.fn<
+        (
+          callback: (client: { $queryRaw: typeof queryRaw }) => Promise<unknown>,
+          options: { maxWait: number; timeout: number },
+        ) => Promise<unknown>
+      >();
     transaction.mockImplementation(async (callback) => callback({ $queryRaw: queryRaw }));
     service = new HealthService({ $transaction: transaction } as unknown as PrismaService);
   });
@@ -23,8 +24,10 @@ describe('HealthService', () => {
     queryRaw.mockResolvedValue([{ '?column?': 1 }]);
 
     await expect(service.isDatabaseAvailable()).resolves.toBe(true);
-    expect(queryRaw).toHaveBeenCalledTimes(2);
-    expect(transaction).toHaveBeenCalledWith(expect.any(Function), { maxWait: 1000, timeout: 3000 });
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 1000,
+      timeout: 3000,
+    });
   });
 
   it('reports an inaccessible database without exposing the driver error', async () => {

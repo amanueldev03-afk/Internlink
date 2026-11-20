@@ -54,7 +54,11 @@ async function bootstrap() {
       /^[A-Z0-9_]+$/.test(error.code)
         ? error.code
         : undefined;
-    Logger.error(`API startup failed (${[stage, code].filter(Boolean).join(', ')}).`);
+    Logger.error(
+      code === 'INVALID_PORT'
+        ? 'API startup failed: PORT must be an integer between 1 and 65535.'
+        : `API startup failed (${[stage, code].filter(Boolean).join(', ')}).`,
+    );
     process.exitCode = 1;
 
     if (app) {
