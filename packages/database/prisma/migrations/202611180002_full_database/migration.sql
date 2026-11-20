@@ -1,11 +1,5 @@
--- Apply only in the maintenance window described in packages/database/README.md.
--- Stop API, workers, and other database writers before prisma migrate deploy.
 -- CreateEnum
 CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INVITED', 'SUSPENDED', 'DISABLED');
-
--- Add the organization-scoped settings permission while keeping global settings
--- restricted to the existing system-admin permission.
-ALTER TYPE "PermissionName" ADD VALUE 'MANAGE_ORGANIZATION_SETTINGS';
 
 -- CreateEnum
 CREATE TYPE "OrganizationType" AS ENUM ('UNIVERSITY', 'COMPANY', 'STUDENT_UNION', 'FINANCIAL_OFFICE', 'DORMITORY', 'OTHER');
@@ -101,28 +95,18 @@ DROP INDEX "UserRole_userId_roleId_key";
 ALTER TABLE "User" ADD COLUMN     "deletedAt" TIMESTAMP(3),
 ADD COLUMN     "emailVerifiedAt" TIMESTAMP(3),
 ADD COLUMN     "lastLoginAt" TIMESTAMP(3),
-ALTER COLUMN "email" SET DATA TYPE TEXT,
-ALTER COLUMN "phone" SET DATA TYPE TEXT,
-ALTER COLUMN "passwordHash" SET DATA TYPE TEXT,
-ALTER COLUMN "firstName" SET DATA TYPE TEXT,
-ALTER COLUMN "lastName" SET DATA TYPE TEXT;
+ALTER COLUMN "email" SET DATA TYPE VARCHAR(320),
+ALTER COLUMN "phone" SET DATA TYPE VARCHAR(32),
+ALTER COLUMN "passwordHash" SET DATA TYPE VARCHAR(255),
+ALTER COLUMN "firstName" SET DATA TYPE VARCHAR(100),
+ALTER COLUMN "lastName" SET DATA TYPE VARCHAR(100);
 
--- Preserve known inactive states; only inactive ACTIVE is overridden to DISABLED.
+-- Preserve and map any historical free-form statuses; unknown values are disabled.
 ALTER TABLE "User" RENAME COLUMN "status" TO "legacyStatus";
-ALTER TABLE "User" ALTER COLUMN "legacyStatus" TYPE TEXT,
-<<<<<<< HEAD
+ALTER TABLE "User" ALTER COLUMN "legacyStatus" TYPE VARCHAR(100),
 ALTER COLUMN "legacyStatus" DROP NOT NULL;
 ALTER TABLE "User" ADD COLUMN "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE';
 UPDATE "User" SET "status" = CASE
-  WHEN upper("legacyStatus") = 'ACTIVE' AND NOT "isActive"
-    THEN 'DISABLED'::"UserStatus"
-=======
-ALTER COLUMN "legacyStatus" DROP DEFAULT,
-ALTER COLUMN "legacyStatus" DROP NOT NULL;
-ALTER TABLE "User" ADD COLUMN "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE';
-UPDATE "User" SET "status" = CASE
-  WHEN NOT "isActive" AND upper("legacyStatus") = 'ACTIVE' THEN 'DISABLED'::"UserStatus"
->>>>>>> origin/feature/backend-foundation
   WHEN upper("legacyStatus") IN ('ACTIVE', 'INVITED', 'SUSPENDED', 'DISABLED')
     THEN upper("legacyStatus")::"UserStatus"
   WHEN NOT "isActive" THEN 'DISABLED'::"UserStatus"
@@ -130,22 +114,22 @@ UPDATE "User" SET "status" = CASE
 END;
 
 -- AlterTable
-ALTER TABLE "Role" ALTER COLUMN "description" SET DATA TYPE TEXT;
+ALTER TABLE "Role" ALTER COLUMN "description" SET DATA TYPE VARCHAR(500);
 
 -- AlterTable
-ALTER TABLE "Permission" ALTER COLUMN "description" SET DATA TYPE TEXT;
+ALTER TABLE "Permission" ALTER COLUMN "description" SET DATA TYPE VARCHAR(500);
 
 -- AlterTable
 ALTER TABLE "UserRole" ADD COLUMN     "organizationId" TEXT;
 
 -- AlterTable
 ALTER TABLE "Organization" ADD COLUMN     "deletedAt" TIMESTAMP(3),
-ALTER COLUMN "name" SET DATA TYPE TEXT,
-ALTER COLUMN "slug" SET DATA TYPE TEXT;
+ALTER COLUMN "name" SET DATA TYPE VARCHAR(200),
+ALTER COLUMN "slug" SET DATA TYPE VARCHAR(120);
 
 -- Preserve the old string type and map it to the constrained organization enum.
 ALTER TABLE "Organization" RENAME COLUMN "type" TO "legacyType";
-ALTER TABLE "Organization" ALTER COLUMN "legacyType" TYPE TEXT,
+ALTER TABLE "Organization" ALTER COLUMN "legacyType" TYPE VARCHAR(120),
 ALTER COLUMN "legacyType" DROP NOT NULL;
 ALTER TABLE "Organization" ADD COLUMN "type" "OrganizationType" NOT NULL DEFAULT 'OTHER';
 UPDATE "Organization" SET "type" = CASE upper("legacyType")
@@ -162,101 +146,38 @@ ALTER TABLE "Organization" ALTER COLUMN "type" DROP DEFAULT;
 ALTER TABLE "OrganizationMember" ADD COLUMN     "leftAt" TIMESTAMP(3);
 
 -- AlterTable
-ALTER TABLE "Department" ALTER COLUMN "name" SET DATA TYPE TEXT,
-ALTER COLUMN "code" SET DATA TYPE TEXT;
+ALTER TABLE "Department" ALTER COLUMN "name" SET DATA TYPE VARCHAR(160),
+ALTER COLUMN "code" SET DATA TYPE VARCHAR(40);
 
 -- AlterTable
 ALTER TABLE "StudentProfile" ADD COLUMN     "departmentId" TEXT,
 ADD COLUMN     "programId" TEXT,
 ADD COLUMN     "universityId" TEXT,
-ALTER COLUMN "studentNumber" SET DATA TYPE TEXT,
-<<<<<<< HEAD
-ALTER COLUMN "gpa" SET DATA TYPE DECIMAL(5,2);
-=======
-ALTER COLUMN "gpa" SET DATA TYPE DOUBLE PRECISION;
->>>>>>> origin/feature/backend-foundation
+ALTER COLUMN "studentNumber" SET DATA TYPE VARCHAR(80),
+ALTER COLUMN "gpa" SET DATA TYPE DECIMAL(4,2);
 
 -- AlterTable
 ALTER TABLE "CompanyProfile" ADD COLUMN     "organizationId" TEXT,
-ALTER COLUMN "companyName" SET DATA TYPE TEXT,
-ALTER COLUMN "website" SET DATA TYPE TEXT,
-ALTER COLUMN "industry" SET DATA TYPE TEXT;
+ALTER COLUMN "companyName" SET DATA TYPE VARCHAR(200),
+ALTER COLUMN "website" SET DATA TYPE VARCHAR(500),
+ALTER COLUMN "industry" SET DATA TYPE VARCHAR(120);
 
-<<<<<<< HEAD
--- Attach each legacy profile to the organization inserted for that profile.
--- Slug collisions are resolved with a suffix; an ID collision is a hard error.
-DO $$
-DECLARE
-  company RECORD;
-  generated_id TEXT;
-  base_slug TEXT;
-  candidate_slug TEXT;
-  suffix INTEGER;
-BEGIN
-  FOR company IN
-    SELECT "id", "companyName" FROM "CompanyProfile" ORDER BY "id"
-  LOOP
-    generated_id := 'legacy-company-' || substr(md5(company."id"), 1, 24);
-    IF EXISTS (SELECT 1 FROM "Organization" WHERE "id" = generated_id) THEN
-      RAISE EXCEPTION 'Generated legacy organization ID already exists for company profile %', company."id";
-    END IF;
-
-    base_slug := generated_id;
-    candidate_slug := base_slug;
-    suffix := 0;
-    WHILE EXISTS (SELECT 1 FROM "Organization" WHERE "slug" = candidate_slug) LOOP
-      suffix := suffix + 1;
-      candidate_slug := base_slug || '-' || suffix::TEXT;
-    END LOOP;
-
-    INSERT INTO "Organization" ("id", "name", "slug", "type", "createdAt", "updatedAt")
-    VALUES (
-      generated_id,
-      company."companyName",
-      candidate_slug,
-      'COMPANY'::"OrganizationType",
-      CURRENT_TIMESTAMP,
-      CURRENT_TIMESTAMP
-    );
-
-    UPDATE "CompanyProfile"
-    SET "organizationId" = generated_id
-    WHERE "id" = company."id";
-  END LOOP;
-END $$;
-
--- Company-profile owners must belong to their newly associated organization.
-INSERT INTO "OrganizationMember" ("id", "organizationId", "userId", "joinedAt")
-SELECT
-  'legacy-company-member-' || substr(md5(cp."id"), 1, 24),
-  cp."organizationId",
-  cp."userId",
-  CURRENT_TIMESTAMP
-FROM "CompanyProfile" cp
-ON CONFLICT ("organizationId", "userId") DO NOTHING;
-=======
 -- Existing company profiles predate organizations. Give each profile a stable,
 -- tenant-scoped legacy organization before requiring the new foreign key.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM "CompanyProfile" cp JOIN "Organization" o
-      ON o."slug" = 'legacy-company-' || substr(md5(cp."id"), 1, 24)
-      OR o."id" = 'legacy-company-' || substr(md5(cp."id"), 1, 24)
-  ) THEN
-    RAISE EXCEPTION 'Legacy company organization identifier conflict: resolve reserved legacy-company identifiers before retrying migration';
-  END IF;
-END $$;
-
 INSERT INTO "Organization" ("id", "name", "slug", "type", "createdAt", "updatedAt")
 SELECT 'legacy-company-' || substr(md5(cp."id"), 1, 24), cp."companyName",
        'legacy-company-' || substr(md5(cp."id"), 1, 24), 'COMPANY'::"OrganizationType",
        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-FROM "CompanyProfile" cp;
+FROM "CompanyProfile" cp
+WHERE NOT EXISTS (
+  SELECT 1 FROM "Organization" o
+  WHERE o."slug" = 'legacy-company-' || substr(md5(cp."id"), 1, 24)
+);
 
 UPDATE "CompanyProfile" cp
-SET "organizationId" = 'legacy-company-' || substr(md5(cp."id"), 1, 24);
->>>>>>> origin/feature/backend-foundation
+SET "organizationId" = o."id"
+FROM "Organization" o
+WHERE o."slug" = 'legacy-company-' || substr(md5(cp."id"), 1, 24);
 
 ALTER TABLE "CompanyProfile" ALTER COLUMN "organizationId" SET NOT NULL;
 
@@ -264,13 +185,13 @@ ALTER TABLE "CompanyProfile" ALTER COLUMN "organizationId" SET NOT NULL;
 ALTER TABLE "CompanyVerification" ADD COLUMN     "evidenceDocumentId" TEXT;
 
 -- AlterTable
-ALTER TABLE "RefreshToken" ALTER COLUMN "tokenHash" SET DATA TYPE TEXT;
+ALTER TABLE "RefreshToken" ALTER COLUMN "tokenHash" SET DATA TYPE VARCHAR(255);
 
 -- AlterTable
 ALTER TABLE "LoginSession" ADD COLUMN     "revokedAt" TIMESTAMP(3),
-ALTER COLUMN "tokenHash" SET DATA TYPE TEXT,
-ALTER COLUMN "device" SET DATA TYPE TEXT,
-ALTER COLUMN "ipAddress" SET DATA TYPE TEXT;
+ALTER COLUMN "tokenHash" SET DATA TYPE VARCHAR(255),
+ALTER COLUMN "device" SET DATA TYPE VARCHAR(255),
+ALTER COLUMN "ipAddress" SET DATA TYPE VARCHAR(64);
 
 -- CreateTable
 CREATE TABLE "University" (
@@ -445,7 +366,6 @@ CREATE TABLE "StudentSkill" (
 CREATE TABLE "Application" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
-    "programId" TEXT NOT NULL,
     "studentProfileId" TEXT NOT NULL,
     "positionId" TEXT NOT NULL,
     "submittedById" TEXT,
@@ -730,7 +650,7 @@ CREATE TABLE "ImplementationMilestone" (
     "description" TEXT,
     "dueAt" TIMESTAMP(3),
     "completedAt" TIMESTAMP(3),
-    "sortOrder" INTEGER NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "ImplementationMilestone_pkey" PRIMARY KEY ("id")
@@ -809,7 +729,7 @@ CREATE TABLE "EvaluationCriterion" (
     "description" TEXT,
     "maxScore" DECIMAL(7,2) NOT NULL,
     "weight" DECIMAL(7,4) NOT NULL DEFAULT 1,
-    "sortOrder" INTEGER NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
 
     CONSTRAINT "EvaluationCriterion_pkey" PRIMARY KEY ("id")
 );
@@ -818,7 +738,6 @@ CREATE TABLE "EvaluationCriterion" (
 CREATE TABLE "EvaluationResult" (
     "id" TEXT NOT NULL,
     "reviewId" TEXT NOT NULL,
-    "submissionId" TEXT NOT NULL,
     "placementId" TEXT NOT NULL,
     "studentProfileId" TEXT NOT NULL,
     "criterionId" TEXT,
@@ -1310,13 +1229,7 @@ CREATE UNIQUE INDEX "OrganizationSetting_organizationId_key_key" ON "Organizatio
 CREATE INDEX "InternshipProgram_organizationId_status_applicationDeadline_idx" ON "InternshipProgram"("organizationId", "status", "applicationDeadline");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "InternshipProgram_id_organizationId_key" ON "InternshipProgram"("id", "organizationId");
-
--- CreateIndex
 CREATE INDEX "InternshipPosition_programId_status_idx" ON "InternshipPosition"("programId", "status");
-
--- CreateIndex
-CREATE UNIQUE INDEX "InternshipPosition_id_programId_key" ON "InternshipPosition"("id", "programId");
 
 -- CreateIndex
 CREATE INDEX "InternshipSkill_skillId_idx" ON "InternshipSkill"("skillId");
@@ -1344,12 +1257,6 @@ CREATE INDEX "Application_positionId_status_idx" ON "Application"("positionId", 
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Application_studentProfileId_positionId_key" ON "Application"("studentProfileId", "positionId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Application_id_positionId_studentProfileId_organizationId_key" ON "Application"("id", "positionId", "studentProfileId", "organizationId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Application_id_positionId_key" ON "Application"("id", "positionId");
 
 -- CreateIndex
 CREATE INDEX "ApplicationDocument_documentId_idx" ON "ApplicationDocument"("documentId");
@@ -1400,23 +1307,6 @@ CREATE UNIQUE INDEX "InterviewFeedback_interviewId_key" ON "InterviewFeedback"("
 CREATE UNIQUE INDEX "Placement_applicationId_key" ON "Placement"("applicationId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Placement_applicationId_positionId_studentProfileId_key"
-ON "Placement"("applicationId", "positionId", "studentProfileId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Placement_application_org_key"
-ON "Placement"("applicationId", "positionId", "studentProfileId", "organizationId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Placement_id_studentProfileId_key" ON "Placement"("id", "studentProfileId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Placement_id_organizationId_key" ON "Placement"("id", "organizationId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Placement_id_studentProfileId_organizationId_key" ON "Placement"("id", "studentProfileId", "organizationId");
-
--- CreateIndex
 CREATE INDEX "Placement_organizationId_status_startsAt_idx" ON "Placement"("organizationId", "status", "startsAt");
 
 -- CreateIndex
@@ -1430,9 +1320,6 @@ CREATE UNIQUE INDEX "InternshipAgreement_documentId_key" ON "InternshipAgreement
 
 -- CreateIndex
 CREATE UNIQUE INDEX "InternshipTeam_placementId_key" ON "InternshipTeam"("placementId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "InternshipTeam_placementId_organizationId_key" ON "InternshipTeam"("placementId", "organizationId");
 
 -- CreateIndex
 CREATE INDEX "InternshipTeam_organizationId_idx" ON "InternshipTeam"("organizationId");
@@ -1498,9 +1385,6 @@ CREATE INDEX "Submission_organizationId_status_submittedAt_idx" ON "Submission"(
 CREATE INDEX "Submission_placementId_status_idx" ON "Submission"("placementId", "status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Submission_id_placementId_key" ON "Submission"("id", "placementId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "SubmissionVersion_submissionId_version_key" ON "SubmissionVersion"("submissionId", "version");
 
 -- CreateIndex
@@ -1511,9 +1395,6 @@ CREATE INDEX "Review_submissionId_status_idx" ON "Review"("submissionId", "statu
 
 -- CreateIndex
 CREATE INDEX "Review_rubricId_idx" ON "Review"("rubricId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Review_id_submissionId_key" ON "Review"("id", "submissionId");
 
 -- CreateIndex
 CREATE INDEX "ReviewComment_reviewId_createdAt_idx" ON "ReviewComment"("reviewId", "createdAt");
@@ -1534,9 +1415,6 @@ CREATE UNIQUE INDEX "EvaluationCriterion_rubricId_sortOrder_key" ON "EvaluationC
 CREATE UNIQUE INDEX "EvaluationResult_reviewId_key" ON "EvaluationResult"("reviewId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EvaluationResult_reviewId_submissionId_key" ON "EvaluationResult"("reviewId", "submissionId");
-
--- CreateIndex
 CREATE INDEX "EvaluationResult_placementId_publishedAt_idx" ON "EvaluationResult"("placementId", "publishedAt");
 
 -- CreateIndex
@@ -1544,9 +1422,6 @@ CREATE INDEX "EvaluationResult_studentProfileId_publishedAt_idx" ON "EvaluationR
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Document_storageKey_key" ON "Document"("storageKey");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Document_id_organizationId_key" ON "Document"("id", "organizationId");
 
 -- CreateIndex
 CREATE INDEX "Document_organizationId_status_createdAt_idx" ON "Document"("organizationId", "status", "createdAt");
@@ -1603,10 +1478,6 @@ CREATE UNIQUE INDEX "PresentationResult_scheduleId_key" ON "PresentationResult"(
 CREATE UNIQUE INDEX "FinalResult_placementId_key" ON "FinalResult"("placementId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FinalResult_placementId_studentProfileId_organizationId_key" ON "FinalResult"("placementId", "studentProfileId", "organizationId");
-
--- CreateIndex
--- CreateIndex
 CREATE INDEX "FinalResult_organizationId_publishedAt_idx" ON "FinalResult"("organizationId", "publishedAt");
 
 -- CreateIndex
@@ -1634,10 +1505,6 @@ CREATE UNIQUE INDEX "DormitoryKey_dormitoryId_keyCode_key" ON "DormitoryKey"("do
 CREATE INDEX "KeyCheckout_keyId_status_idx" ON "KeyCheckout"("keyId", "status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "KeyCheckout_one_open_per_key_idx" ON "KeyCheckout"("keyId")
-WHERE "status" = 'CHECKED_OUT';
-
--- CreateIndex
 CREATE INDEX "KeyCheckout_allocationId_status_idx" ON "KeyCheckout"("allocationId", "status");
 
 -- CreateIndex
@@ -1660,10 +1527,6 @@ CREATE INDEX "FinancialSupportRequest_organizationId_status_createdAt_idx" ON "F
 
 -- CreateIndex
 CREATE INDEX "FinancialSupportRequest_studentProfileId_status_idx" ON "FinancialSupportRequest"("studentProfileId", "status");
-
--- CreateIndex
-CREATE UNIQUE INDEX "FinancialSupportRequest_id_studentProfileId_organizationId_key"
-ON "FinancialSupportRequest"("id", "studentProfileId", "organizationId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Payment_providerReferenceHash_key" ON "Payment"("providerReferenceHash");
@@ -1752,15 +1615,8 @@ CREATE INDEX "UserRole_organizationId_roleId_idx" ON "UserRole"("organizationId"
 -- CreateIndex
 CREATE INDEX "UserRole_userId_roleId_idx" ON "UserRole"("userId", "roleId");
 
-CREATE UNIQUE INDEX "UserRole_global_userId_roleId_key" ON "UserRole"("userId", "roleId") WHERE "organizationId" IS NULL;
-
 -- CreateIndex
 CREATE UNIQUE INDEX "UserRole_userId_roleId_organizationId_key" ON "UserRole"("userId", "roleId", "organizationId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "UserRole_global_userId_roleId_key"
-ON "UserRole"("userId", "roleId")
-WHERE "organizationId" IS NULL;
 
 -- CreateIndex
 CREATE INDEX "RolePermission_permissionId_idx" ON "RolePermission"("permissionId");
@@ -1774,26 +1630,8 @@ CREATE INDEX "OrganizationMember_userId_leftAt_idx" ON "OrganizationMember"("use
 -- CreateIndex
 CREATE INDEX "Department_organizationId_idx" ON "Department"("organizationId");
 
--- Keep the earliest row's code and clear duplicate codes before enforcing the
--- per-organization unique constraint.
-WITH duplicate_department_codes AS (
-  SELECT
-    "id",
-    row_number() OVER (
-      PARTITION BY "organizationId", "code"
-      ORDER BY "createdAt", "id"
-    ) AS duplicate_number
-  FROM "Department"
-  WHERE "code" IS NOT NULL
-)
-UPDATE "Department" AS department
-SET "code" = NULL
-FROM duplicate_department_codes AS duplicate
-WHERE department."id" = duplicate."id"
-  AND duplicate.duplicate_number > 1;
-
 -- CreateIndex
-CREATE INDEX "Department_organizationId_code_idx" ON "Department"("organizationId", "code");
+CREATE UNIQUE INDEX "Department_organizationId_code_key" ON "Department"("organizationId", "code");
 
 -- CreateIndex
 CREATE INDEX "StudentProfile_departmentId_programId_idx" ON "StudentProfile"("departmentId", "programId");
@@ -1810,69 +1648,13 @@ CREATE UNIQUE INDEX "CompanyProfile_organizationId_key" ON "CompanyProfile"("org
 -- CreateIndex
 CREATE INDEX "CompanyVerification_status_createdAt_idx" ON "CompanyVerification"("status", "createdAt");
 
--- Ambiguous legacy bearer tokens must not remain usable under an arbitrary
--- user/session row after tokenHash uniqueness is enforced.
-WITH duplicate_hashes AS (
-  SELECT "tokenHash"
-  FROM "RefreshToken"
-  GROUP BY "tokenHash"
-  HAVING COUNT(*) > 1
-)
-UPDATE "RefreshToken" AS token
-SET "revokedAt" = COALESCE(token."revokedAt", CURRENT_TIMESTAMP)
-FROM duplicate_hashes
-WHERE token."tokenHash" = duplicate_hashes."tokenHash";
-
-DELETE FROM "RefreshToken" AS duplicate
-USING "RefreshToken" AS retained
-WHERE duplicate."tokenHash" = retained."tokenHash"
-  AND duplicate."id" > retained."id";
-
-WITH duplicate_hashes AS (
-  SELECT "tokenHash"
-  FROM "LoginSession"
-  GROUP BY "tokenHash"
-  HAVING COUNT(*) > 1
-)
-UPDATE "LoginSession" AS session
-SET "revokedAt" = COALESCE(session."revokedAt", CURRENT_TIMESTAMP)
-FROM duplicate_hashes
-WHERE session."tokenHash" = duplicate_hashes."tokenHash";
-
-DELETE FROM "LoginSession" AS duplicate
-USING "LoginSession" AS retained
-WHERE duplicate."tokenHash" = retained."tokenHash"
-  AND duplicate."id" > retained."id";
-
 -- CreateIndex
--- Keep the lexically smallest id and revoke every ambiguous hash.
--- Unique hashes are untouched, including their existing revocation state.
-WITH duplicates AS (
-  SELECT "tokenHash", min("id") AS keeper, min("revokedAt") AS revoked
-  FROM "RefreshToken" GROUP BY "tokenHash" HAVING count(*) > 1
-)
-UPDATE "RefreshToken" t SET "revokedAt" = coalesce(d.revoked, CURRENT_TIMESTAMP)
-FROM duplicates d WHERE t."id" = d.keeper;
-DELETE FROM "RefreshToken" t USING "RefreshToken" keeper
-WHERE t."tokenHash" = keeper."tokenHash" AND t."id" > keeper."id";
-
 CREATE UNIQUE INDEX "RefreshToken_tokenHash_key" ON "RefreshToken"("tokenHash");
 
 -- CreateIndex
 CREATE INDEX "RefreshToken_userId_expiresAt_idx" ON "RefreshToken"("userId", "expiresAt");
 
 -- CreateIndex
--- Keep the lexically smallest id and revoke every ambiguous hash.
--- Unique hashes are untouched, including their existing revocation state.
-WITH duplicates AS (
-  SELECT "tokenHash", min("id") AS keeper, min("revokedAt") AS revoked
-  FROM "LoginSession" GROUP BY "tokenHash" HAVING count(*) > 1
-)
-UPDATE "LoginSession" t SET "revokedAt" = coalesce(d.revoked, CURRENT_TIMESTAMP)
-FROM duplicates d WHERE t."id" = d.keeper;
-DELETE FROM "LoginSession" t USING "LoginSession" keeper
-WHERE t."tokenHash" = keeper."tokenHash" AND t."id" > keeper."id";
-
 CREATE UNIQUE INDEX "LoginSession_tokenHash_key" ON "LoginSession"("tokenHash");
 
 -- CreateIndex
@@ -1975,17 +1757,10 @@ ALTER TABLE "StudentSkill" ADD CONSTRAINT "StudentSkill_skillId_fkey" FOREIGN KE
 ALTER TABLE "Application" ADD CONSTRAINT "Application_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Application" ADD CONSTRAINT "Application_programId_organizationId_fkey"
-FOREIGN KEY ("programId", "organizationId") REFERENCES "InternshipProgram"("id", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Application" ADD CONSTRAINT "Application_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Application" ADD CONSTRAINT "Application_positionId_programId_fkey"
-FOREIGN KEY ("positionId", "programId") REFERENCES "InternshipPosition"("id", "programId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Application" ADD CONSTRAINT "Application_positionId_fkey" FOREIGN KEY ("positionId") REFERENCES "InternshipPosition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Application" ADD CONSTRAINT "Application_submittedById_fkey" FOREIGN KEY ("submittedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -2027,9 +1802,7 @@ ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_senderId_fkey" FOREIGN KEY (
 ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_recipientId_fkey" FOREIGN KEY ("recipientId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Interview" ADD CONSTRAINT "Interview_applicationPosition_fkey"
-FOREIGN KEY ("applicationId", "positionId") REFERENCES "Application"("id", "positionId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Interview" ADD CONSTRAINT "Interview_applicationId_fkey" FOREIGN KEY ("applicationId") REFERENCES "Application"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Interview" ADD CONSTRAINT "Interview_positionId_fkey" FOREIGN KEY ("positionId") REFERENCES "InternshipPosition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2047,10 +1820,7 @@ ALTER TABLE "InterviewFeedback" ADD CONSTRAINT "InterviewFeedback_interviewId_fk
 ALTER TABLE "Placement" ADD CONSTRAINT "Placement_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Placement" ADD CONSTRAINT "Placement_applicationPositionStudent_fkey"
-FOREIGN KEY ("applicationId", "positionId", "studentProfileId", "organizationId")
-REFERENCES "Application"("id", "positionId", "studentProfileId", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Placement" ADD CONSTRAINT "Placement_applicationId_fkey" FOREIGN KEY ("applicationId") REFERENCES "Application"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Placement" ADD CONSTRAINT "Placement_positionId_fkey" FOREIGN KEY ("positionId") REFERENCES "InternshipPosition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2068,9 +1838,7 @@ ALTER TABLE "InternshipAgreement" ADD CONSTRAINT "InternshipAgreement_documentId
 ALTER TABLE "InternshipTeam" ADD CONSTRAINT "InternshipTeam_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "InternshipTeam" ADD CONSTRAINT "InternshipTeam_placementOrganization_fkey"
-FOREIGN KEY ("placementId", "organizationId") REFERENCES "Placement"("id", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "InternshipTeam" ADD CONSTRAINT "InternshipTeam_placementId_fkey" FOREIGN KEY ("placementId") REFERENCES "Placement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "TeamMember" ADD CONSTRAINT "TeamMember_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "InternshipTeam"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2151,9 +1919,7 @@ ALTER TABLE "ImplementationMilestone" ADD CONSTRAINT "ImplementationMilestone_pl
 ALTER TABLE "Submission" ADD CONSTRAINT "Submission_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Submission" ADD CONSTRAINT "Submission_placementOrganization_fkey"
-FOREIGN KEY ("placementId", "organizationId") REFERENCES "Placement"("id", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Submission" ADD CONSTRAINT "Submission_placementId_fkey" FOREIGN KEY ("placementId") REFERENCES "Placement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "SubmissionVersion" ADD CONSTRAINT "SubmissionVersion_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "Submission"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2177,19 +1943,10 @@ ALTER TABLE "EvaluationRubric" ADD CONSTRAINT "EvaluationRubric_organizationId_f
 ALTER TABLE "EvaluationCriterion" ADD CONSTRAINT "EvaluationCriterion_rubricId_fkey" FOREIGN KEY ("rubricId") REFERENCES "EvaluationRubric"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_reviewId_submissionId_fkey"
-FOREIGN KEY ("reviewId", "submissionId") REFERENCES "Review"("id", "submissionId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_reviewId_fkey" FOREIGN KEY ("reviewId") REFERENCES "Review"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_submissionId_placementId_fkey"
-FOREIGN KEY ("submissionId", "placementId") REFERENCES "Submission"("id", "placementId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_placementStudent_fkey"
-FOREIGN KEY ("placementId", "studentProfileId") REFERENCES "Placement"("id", "studentProfileId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_placementId_fkey" FOREIGN KEY ("placementId") REFERENCES "Placement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "EvaluationResult" ADD CONSTRAINT "EvaluationResult_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2258,9 +2015,7 @@ ALTER TABLE "PresentationResult" ADD CONSTRAINT "PresentationResult_scheduleId_f
 ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_placementStudentOrg_fkey"
-FOREIGN KEY ("placementId", "studentProfileId", "organizationId") REFERENCES "Placement"("id", "studentProfileId", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_placementId_fkey" FOREIGN KEY ("placementId") REFERENCES "Placement"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "FinalResult" ADD CONSTRAINT "FinalResult_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2317,10 +2072,7 @@ ALTER TABLE "Payment" ADD CONSTRAINT "Payment_organizationId_fkey" FOREIGN KEY (
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Payment" ADD CONSTRAINT "Payment_supportRequestContext_fkey"
-FOREIGN KEY ("supportRequestId", "studentProfileId", "organizationId")
-REFERENCES "FinancialSupportRequest"("id", "studentProfileId", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Payment" ADD CONSTRAINT "Payment_supportRequestId_fkey" FOREIGN KEY ("supportRequestId") REFERENCES "FinancialSupportRequest"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Notification" ADD CONSTRAINT "Notification_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2368,10 +2120,7 @@ ALTER TABLE "CVExtraction" ADD CONSTRAINT "CVExtraction_organizationId_fkey" FOR
 ALTER TABLE "CVExtraction" ADD CONSTRAINT "CVExtraction_studentProfileId_fkey" FOREIGN KEY ("studentProfileId") REFERENCES "StudentProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "CVExtraction" ADD CONSTRAINT "CVExtraction_documentOrganization_fkey"
-FOREIGN KEY ("documentId", "organizationId")
-REFERENCES "Document"("id", "organizationId")
-ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "CVExtraction" ADD CONSTRAINT "CVExtraction_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CVExtraction" ADD CONSTRAINT "CVExtraction_requestedById_fkey" FOREIGN KEY ("requestedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -4,17 +4,22 @@ import { PrismaClient } from '@prisma/client';
 
 const DEFAULT_DATABASE_CONNECT_TIMEOUT_SECONDS = 2;
 const DEFAULT_DATABASE_SOCKET_TIMEOUT_SECONDS = 5;
+const DEFAULT_DATABASE_POOL_TIMEOUT_SECONDS = 1;
 
 export function normalizeDatabaseUrl(
   databaseUrl: string,
   fallbackConnectTimeoutSeconds: number,
   fallbackSocketTimeoutSeconds = DEFAULT_DATABASE_SOCKET_TIMEOUT_SECONDS,
+  fallbackPoolTimeoutSeconds = DEFAULT_DATABASE_POOL_TIMEOUT_SECONDS,
 ): string {
   if (!Number.isSafeInteger(fallbackConnectTimeoutSeconds) || fallbackConnectTimeoutSeconds < 1) {
     throw new Error('DATABASE_CONNECT_TIMEOUT_SECONDS must be a positive integer.');
   }
   if (!Number.isSafeInteger(fallbackSocketTimeoutSeconds) || fallbackSocketTimeoutSeconds < 1) {
     throw new Error('DATABASE_SOCKET_TIMEOUT_SECONDS must be a positive integer.');
+  }
+  if (!Number.isSafeInteger(fallbackPoolTimeoutSeconds) || fallbackPoolTimeoutSeconds < 1) {
+    throw new Error('DATABASE_POOL_TIMEOUT_SECONDS must be a positive integer.');
   }
 
   let url: URL;
@@ -34,6 +39,7 @@ export function normalizeDatabaseUrl(
   for (const [parameter, fallbackSeconds] of [
     ['connect_timeout', fallbackConnectTimeoutSeconds],
     ['socket_timeout', fallbackSocketTimeoutSeconds],
+    ['pool_timeout', fallbackPoolTimeoutSeconds],
   ] as const) {
     const value = url.searchParams.get(parameter);
     if (value === null || value === '0') {
@@ -65,15 +71,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private readonly logger = new Logger(PrismaService.name);
 
   constructor(config: ConfigService) {
-    const url = new URL(config.getOrThrow<string>('database.url'));
-    // Prisma 5 native PostgreSQL driver deadlines (seconds).
-    url.searchParams.set('connect_timeout', '2');
-    url.searchParams.set('socket_timeout', '2');
-    url.searchParams.set('pool_timeout', '1');
     super({
       datasources: {
         db: {
-<<<<<<< HEAD
           url: normalizeDatabaseUrl(
             config.getOrThrow<string>('database.url'),
             config.get<number>(
@@ -84,10 +84,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
               'database.socketTimeoutSeconds',
               DEFAULT_DATABASE_SOCKET_TIMEOUT_SECONDS,
             ),
+            DEFAULT_DATABASE_POOL_TIMEOUT_SECONDS,
           ),
-=======
-          url: url.toString(),
->>>>>>> origin/feature/backend-foundation
         },
       },
     });

@@ -45,6 +45,18 @@ describe('PrismaService', () => {
     expect(new URL(explicitTimeout).searchParams.get('socket_timeout')).toBe('12');
   });
 
+  it('sets a finite pool timeout and preserves an explicit positive value', () => {
+    const defaultTimeout = normalizeDatabaseUrl('postgresql://test:test@localhost:5432/test', 4, 6);
+    const explicitTimeout = normalizeDatabaseUrl(
+      'postgresql://test:test@localhost:5432/test?pool_timeout=9',
+      4,
+      6,
+    );
+
+    expect(new URL(defaultTimeout).searchParams.get('pool_timeout')).toBe('1');
+    expect(new URL(explicitTimeout).searchParams.get('pool_timeout')).toBe('9');
+  });
+
   it('does not expose malformed credential-bearing database URLs in errors', () => {
     expect(() => normalizeDatabaseUrl('postgresql://user:private-secret@%', 2)).toThrow(
       'The configured database URL is invalid.',
